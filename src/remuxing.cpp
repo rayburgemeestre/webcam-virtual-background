@@ -114,6 +114,45 @@ int main(int argc, char **argv)
     float sigma_bg_blur = 5.;
     float sigma_segmask = 3.;
 
+    int src_w = 640;
+    int src_h = 480;
+
+    if (argc < 5) {
+        printf("usage: %s input output mode model\n"
+               "API example program to remux a media file with libavformat and libavcodec.\n"
+               "The output format is guessed according to the file extension.\n"
+               "mode can be: 1 (black bg), 2 (blur bg), 3 (vbg), 4 (vbg+blur)\n"
+               "model can be: 1 (google meet v679 full), 2 (google meet v681 lite), 3 (mlkit)\n"
+               "\n", argv[0]);
+        return 1;
+    }
+    enum segmentation_model {
+        google_meet_full = 1,
+        google_meet_lite,
+        mlkit,
+    };
+    struct model_meta_info {
+        std::string filename;
+        int width;
+        int height;
+    };
+    std::map<segmentation_model, model_meta_info> models{
+        {google_meet_full, {"models/segm_full_v679.tflite", 256, 144} },
+        {google_meet_lite, {"models/segm_lite_v681.tflite", 160, 96} },
+        {mlkit,            {"models/selfiesegmentation_mlkit-256x256-2021_01_19-v1215.f16.tflite", 256, 256} },
+    };
+
+    enum segmentation_mode {
+        black_background = 1,
+        blur_background,
+        virtual_background,
+        virtual_background_blurred
+    };
+    const auto mode = (segmentation_mode)std::stoi(argv[3]);
+    const auto model_selected = (segmentation_model)std::stoi(argv[4]);
+    const auto model = models[model_selected];
+
+
     // Load a background to test
     std::ifstream file("bg.ayuv", std::ios::binary | std::ios::ate);
     if (!file.good()) {
@@ -129,21 +168,13 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    // Some hardcoded configuration
-    const auto model_file = "models/segm_full_v679.tflite";
-    // const auto file = "models/selfiesegmentation_mlkit-256x256-2021_01_19-v1215.f16.tflite";
-    const int src_w = 640, src_h = 480;
-    // const int dst_w = 256, dst_h = 256;
-    // const int dst_w = 160, dst_h = 96;
-    const int dst_w = 256, dst_h = 144;
-
     // Defined outside of the loop to avoid memory reallocations
     std::vector<float> mask;
     std::vector<float> background_y;
 
     // Load model
-    std::unique_ptr<tflite::FlatBufferModel> model(tflite::FlatBufferModel::BuildFromFile(model_file));
-    if (!model) {
+    std::unique_ptr<tflite::FlatBufferModel> tflite_model(tflite::FlatBufferModel::BuildFromFile(model.filename.c_str()));
+    if (!tflite_model) {
         printf("Failed to model\n");
         exit(0);
     } else {
@@ -154,7 +185,7 @@ int main(int argc, char **argv)
 	// Custom op for Google Meet network
 	resolver.AddCustom("Convolution2DTransposeBias", mediapipe::tflite_operations::RegisterConvolution2DTransposeBias());
     std::unique_ptr<tflite::Interpreter> interpreter;
-	tflite::InterpreterBuilder builder(*model, resolver);
+	tflite::InterpreterBuilder builder(*tflite_model, resolver);
 	builder(&interpreter);
 
     // Resize input tensors, if desired.
@@ -166,30 +197,11 @@ int main(int argc, char **argv)
     AVOutputFormat *ofmt = NULL;
     AVFormatContext *ifmt_ctx = NULL, *ofmt_ctx = NULL;
     AVPacket pkt;
-    const char *in_filename, *out_filename;
+    const char *in_filename = argv[1], *out_filename = argv[2];
     int ret, i;
     int stream_index = 0;
     int *stream_mapping = NULL;
     int stream_mapping_size = 0;
-
-    if (argc < 4) {
-        printf("usage: %s input output mode\n"
-               "API example program to remux a media file with libavformat and libavcodec.\n"
-               "The output format is guessed according to the file extension.\n"
-               "mode can be: 1 (black bg), 2 (blur bg), 3 (vbg), 4 (vbg+blur)\n"
-               "\n", argv[0]);
-        return 1;
-    }
-
-    in_filename  = argv[1];
-    out_filename = argv[2];
-    enum segmentation_mode {
-        black_background = 1,
-        blur_background,
-        virtual_background,
-        virtual_background_blurred
-    };
-    const auto mode = (segmentation_mode)std::stoi(argv[3]);
 
     // Needed for detecting v4l2
     avdevice_register_all();
@@ -299,10 +311,10 @@ int main(int argc, char **argv)
 
         // Fill input tensor with RGB values
         auto *input = interpreter->typed_tensor<float>(0);
-        for (int y=0; y<dst_h; y++) {
-            const float ratio_1 = y / float(dst_h);
-            for (int x=0; x<dst_w; x++) {
-                const float ratio_2 = x / float(dst_w);
+        for (int y=0; y<model.height; y++) {
+            const float ratio_1 = y / float(model.height);
+            for (int x=0; x<model.width; x++) {
+                const float ratio_2 = x / float(model.width);
                 int src_y = ratio_1 * src_h;
                 int src_x = ratio_2 * src_w;
 
@@ -331,18 +343,31 @@ int main(int argc, char **argv)
         float* output = interpreter->typed_output_tensor<float>(0);
         for (int y=0; y<src_h; y++) {
             for (int x=0; x<src_w; x++) {
-                const int src_y = y * (dst_h / float(src_h));
-                const int src_x = x * (dst_w / float(src_w));
-                const auto src_offset = (src_y * dst_w) + src_x;
+                const int src_y = y * (model.height / float(src_h));
+                const int src_x = x * (model.width / float(src_w));
+                const auto src_offset = (src_y * model.width) + src_x;
 
-                // Index into the right location in output
-                const auto bg = *(output + src_offset * 2);
-                const auto person = *(output + src_offset * 2 + 1);
-                const auto shift = std::max(bg, person);
-                const auto backgroundExp = exp(bg - shift);
-                const auto personExp = exp(person - shift);
-                // Sets only the alpha component of each pixel
-                const auto val = (255 * personExp) / (backgroundExp + personExp); // softmax
+                const auto val = ([&]() -> uint8_t {
+                    switch (model_selected) {
+                        case mlkit: {
+                            // Index into the right location in output
+                            const auto person = *(output + src_offset);
+                            return (255 * person);
+                            break;
+                        }
+                        case google_meet_full:
+                        case google_meet_lite:
+                            // Index into the right location in output
+                            const auto bg = *(output + src_offset * 2);
+                            const auto person = *(output + src_offset * 2 + 1);
+                            const auto shift = std::max(bg, person);
+                            const auto backgroundExp = exp(bg - shift);
+                            const auto personExp = exp(person - shift);
+                            // Sets only the alpha component of each pixel
+                            return (255 * personExp) / (backgroundExp + personExp); // softmax
+                            break;
+                    }
+                })();
                 mask.push_back(float(val) / 255.0f);
 
                 // Background Y for blurring

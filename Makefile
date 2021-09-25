@@ -38,18 +38,23 @@ compile:  ## compile project
 	LD_LIBRARY_PATH=$$LD_LIBRARY_PATH:$$PWD/ffmpeg/lib:$$PWD/build/tensorflow/bazel-bin/tensorflow/lite \
 	PKG_CONFIG_PATH=$$PWD/ffmpeg/lib/pkgconfig c++ -O0 -g --std=c++11 -I$$PWD/ffmpeg/include -I$$PWD/build/tensorflow/ -I$$PWD/build/tensorflow/third_party/ \
 	-I$$PWD/build/mediapipe \
-	-I$$PWD/build/tensorflow/tensorflow/lite/tools/make/downloads/flatbuffers/include -L$$PWD/ffmpeg/lib -L$$PWD/build/tensorflow/bazel-bin/tensorflow/lite src/remuxing.cpp src/transpose_conv_bias.cc src/blur_float.cpp -lavdevice -lavformat -lavcodec -lavutil -ltensorflowlite -o main
+	-I$$PWD/build/tensorflow/tensorflow/lite/tools/make/downloads/flatbuffers/include \
+	-L$$PWD/ffmpeg/lib \
+	-L$$PWD/build/tensorflow/bazel-bin/tensorflow/lite \
+	src/remuxing.cpp src/transpose_conv_bias.cc src/blur_float.cpp \
+	-lavdevice -lavformat -lavcodec -lavutil -ltensorflowlite \
+	-o main
 
 device:  ## setup two devices /dev/video8 and /dev/video9
 	sudo modprobe -r v4l2loopback
-	sudo modprobe v4l2loopback video_nr=8,9 card_label="Virtual YUV420P Camera","Virtual 640x480 420P TFlite Camera"
+	sudo modprobe v4l2loopback video_nr=8,9 exclusive_caps=1,1 card_label="Virtual YUV420P Camera","Virtual 640x480 420P TFlite Camera"
 
 link:  ## link /dev/video0 to /dev/video8 with 30fps, YUV420p pixel format and 640x480 resolution
 	ffmpeg -i /dev/video0 -f v4l2 -input_format mjpeg -framerate 30 -video_size 1024x680 -vf scale=640:480:force_original_aspect_ratio=increase,crop=640:480 -pix_fmt yuv420p -f v4l2 /dev/video8
 
 run:  ## run project
 	LD_LIBRARY_PATH=$$LD_LIBRARY_PATH:$$PWD/ffmpeg/lib:$$PWD/build/tensorflow/bazel-bin/tensorflow/lite \
-		./main /dev/video8 /dev/video9 3
+		./main /dev/video8 /dev/video9 3 1
 
 debug:  ## run project in debug
 	LD_LIBRARY_PATH=$$LD_LIBRARY_PATH:$$PWD/ffmpeg/lib:$$PWD/build/tensorflow/bazel-bin/tensorflow/lite \
