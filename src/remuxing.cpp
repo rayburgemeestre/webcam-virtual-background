@@ -166,7 +166,7 @@ int main(int argc, char **argv) {
   const auto model_selected = (segmentation_model)std::stoi(argv[4]);
   const auto model = models[model_selected];
 
-  bool animate = true;
+  bool animate = false;
 
   // Load a background to test
 
@@ -322,6 +322,12 @@ int main(int argc, char **argv) {
     AVStream *in_stream, *out_stream;
 
     ret = av_read_frame(ifmt_ctx, &pkt);
+    static int counter = 0;
+    counter++;
+    if (counter % 3 != 0) {
+      av_packet_unref(&pkt);
+      continue;
+    }
     if (ret < 0) break;
 
     in_stream = ifmt_ctx->streams[pkt.stream_index];
@@ -492,12 +498,15 @@ int main(int argc, char **argv) {
 
     // TODO if animate somehow
     // auto *vbg = mode == virtual_background_blurred ? bgv.data() : bg.data();
-    static size_t index = 0;
-    if (index == 750) {
-      index = 0;
-    };
-    auto *vbg = anim_bg[index].data();
-    index++;
+    float *vbg = nullptr;
+    if (animate) {
+      static size_t index = 0;
+      if (index == 750) {
+        index = 0;
+      };
+      auto *vbg = anim_bg[index].data();
+      index++;
+    }
 
     // std::cout << "a: " << bgv.size() << " vs " << bg.size() << std::endl;
 
@@ -556,7 +565,7 @@ int main(int argc, char **argv) {
     av_packet_unref(&pkt_copy);
 
     // see if this helps
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    // std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
 
   av_write_trailer(ofmt_ctx);

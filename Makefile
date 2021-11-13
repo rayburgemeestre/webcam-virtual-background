@@ -36,7 +36,7 @@ mediapipe:
 
 compile:  ## compile project
 	LD_LIBRARY_PATH=$$LD_LIBRARY_PATH:$$PWD/ffmpeg/lib:$$PWD/build/tensorflow/bazel-bin/tensorflow/lite \
-	PKG_CONFIG_PATH=$$PWD/ffmpeg/lib/pkgconfig c++ -O0 -g --std=c++11 -I$$PWD/ffmpeg/include -I$$PWD/build/tensorflow/ -I$$PWD/build/tensorflow/third_party/ \
+	PKG_CONFIG_PATH=$$PWD/ffmpeg/lib/pkgconfig c++ -O3 -g --std=c++11 -I$$PWD/ffmpeg/include -I$$PWD/build/tensorflow/ -I$$PWD/build/tensorflow/third_party/ \
 	-I$$PWD/build/mediapipe \
 	-I$$PWD/build/tensorflow/tensorflow/lite/tools/make/downloads/flatbuffers/include \
 	-L$$PWD/ffmpeg/lib \
@@ -55,7 +55,11 @@ link:  ## link /dev/video0 to /dev/video8 with 30fps, YUV420p pixel format and 6
 
 run:  ## run project
 	LD_LIBRARY_PATH=$$LD_LIBRARY_PATH:$$PWD/ffmpeg/lib:$$PWD/build/tensorflow/bazel-bin/tensorflow/lite \
-		./main /dev/video2 /dev/video9 2 1
+		./main /dev/video2 /dev/video9 1 1
+
+run2:  ## run project
+	LD_LIBRARY_PATH=$$LD_LIBRARY_PATH:$$PWD/ffmpeg/lib:$$PWD/build/tensorflow/bazel-bin/tensorflow/lite \
+		./main /dev/video8 /dev/video9 2 1
 
 debug:  ## run project in debug
 	LD_LIBRARY_PATH=$$LD_LIBRARY_PATH:$$PWD/ffmpeg/lib:$$PWD/build/tensorflow/bazel-bin/tensorflow/lite \
