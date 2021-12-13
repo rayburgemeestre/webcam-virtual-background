@@ -10,7 +10,7 @@ file(GLOB_RECURSE SOURCE_FILES src/**.cc src/**.cpp src/**.h src/**.hpp build/**
 set(dir_list "")
 foreach(sourcefile ${SOURCE_FILES})
     get_filename_component(dir ${sourcefile} PATH)
-    while(NOT "${dir}" STREQUAL "/")
+    while(NOT "${dir}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}")
         if(IS_DIRECTORY ${dir})
             if (NOT dir IN_LIST dir_list)
                 # message(STATUS ${dir})
@@ -24,6 +24,7 @@ endforeach()
 list(REMOVE_DUPLICATES dir_list)
 
 foreach(dir ${dir_list})
+    message(STATUS ${dir})
     include_directories(${dir})
 endforeach()
 
