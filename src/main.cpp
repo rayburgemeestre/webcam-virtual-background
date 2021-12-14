@@ -65,7 +65,26 @@ program::program(int argc, char **argv)
 }
 
 int program::run() {
-  load_tensorflow_model();
+  // Load model
+  std::unique_ptr<tflite::FlatBufferModel> tflite_model(tflite::FlatBufferModel::BuildFromFile(model.filename.c_str()));
+  if (!tflite_model) {
+    printf("Failed to model\n");
+    exit(0);
+  } else {
+    printf("Loaded model\n");
+  }
+
+  tflite::ops::builtin::BuiltinOpResolver resolver;
+  // Custom op for Google Meet network
+  resolver.AddCustom("Convolution2DTransposeBias", mediapipe::tflite_operations::RegisterConvolution2DTransposeBias());
+  tflite::InterpreterBuilder builder(*tflite_model, resolver);
+  builder(&interpreter);
+
+  // Resize input tensors, if desired.
+  if (interpreter->AllocateTensors() != kTfLiteOk) {
+    fprintf(stderr, "Something wrong");
+    exit(1);
+  }
 
   AVOutputFormat *ofmt = NULL;
   AVFormatContext *ifmt_ctx = NULL, *ofmt_ctx = NULL;
@@ -238,26 +257,7 @@ end:
 }
 
 void program::load_tensorflow_model() {
-  // Load model
-  std::unique_ptr<tflite::FlatBufferModel> tflite_model(tflite::FlatBufferModel::BuildFromFile(model.filename.c_str()));
-  if (!tflite_model) {
-    printf("Failed to model\n");
-    exit(0);
-  } else {
-    printf("Loaded model\n");
-  }
-
-  tflite::ops::builtin::BuiltinOpResolver resolver;
-  // Custom op for Google Meet network
-  resolver.AddCustom("Convolution2DTransposeBias", mediapipe::tflite_operations::RegisterConvolution2DTransposeBias());
-  tflite::InterpreterBuilder builder(*tflite_model, resolver);
-  builder(&interpreter);
-
-  // Resize input tensors, if desired.
-  if (interpreter->AllocateTensors() != kTfLiteOk) {
-    fprintf(stderr, "Something wrong");
-    exit(1);
-  }
+  // TODO : move the code into here, properly.
 }
 
 void program::process_frame(AVPacket &pkt_copy) {
