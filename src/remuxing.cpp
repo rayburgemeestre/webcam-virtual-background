@@ -5,9 +5,11 @@ extern "C" {
 
 #include <libavdevice/avdevice.h>
 #include <libavformat/avformat.h>
+#include <libavformat/internal.h>
+#include <libavutil/imgutils.h>
+#include <libavutil/parseutils.h>
 #include <libavutil/timestamp.h>
 #include <libswscale/swscale.h>
-#include <libavformat/internal.h>
 }
 
 #include <chrono>
@@ -74,7 +76,7 @@ public:
 };
 
 program::program(int argc, char **argv) {
-  in_filename = std::string(argv[1]).c_str();
+  in_filename = "/dev/video0";
   out_filename = "/dev/video9";
 }
 
@@ -88,6 +90,15 @@ int program::run() {
   int stream_index = 0;
   int *stream_mapping = NULL;
   int stream_mapping_size = 0;
+  int src_w = 0;
+  int src_h = 0;
+
+  AVCodec *input_codec = NULL;
+  AVCodec *output_codec = NULL;
+  // input
+  AVCodecContext *icodecctx = NULL;
+  AVCodecContext *ocodecctx = NULL;
+  int got_frame = 0;
 
   // Needed for detecting v4l2
   avdevice_register_all();
@@ -140,12 +151,14 @@ int program::run() {
       video_format = (AVPixelFormat)in_codecpar->format;
       std::cout << "The codec pixfmt: " << in_codecpar->format << std::endl;
       if (in_codecpar->format != AV_PIX_FMT_YUV420P) {
-	      // std::cout << "Input is not YUV420P, will have to convert!" << std::endl;
-		  // see libav/avformat.h
-		  // AV_PIX_FMT_YUV420P,   ///< planar YUV 4:2:0, 12bpp, (1 Cr & Cb sample per 2x2 Y samples)
-		  // AV_PIX_FMT_YUYV422,   ///< packed YUV 4:2:2, 16bpp, Y0 Cb Y1 Cr
-		  //throw std::runtime_error("Currently only YUV420P devices are supported.");
-	  }
+        // std::cout << "Input is not YUV420P, will have to convert!" << std::endl;
+        // see libav/avformat.h
+        // AV_PIX_FMT_YUV420P,   ///< planar YUV 4:2:0, 12bpp, (1 Cr & Cb sample per 2x2 Y samples)
+        // AV_PIX_FMT_YUYV422,   ///< packed YUV 4:2:2, 16bpp, Y0 Cb Y1 Cr
+        // throw std::runtime_error("Currently only YUV420P devices are supported.");
+      }
+      src_w = in_codecpar->width;
+      src_h = in_codecpar->width;
     }
 
     stream_mapping[i] = stream_index++;
@@ -162,14 +175,87 @@ int program::run() {
       fprintf(stderr, "Failed to copy codec parameters\n");
       goto end;
     }
-	/*
-    out_stream->codecpar->format = AV_PIX_FMT_YUV420P;
+
+    out_stream->codecpar->format = AV_PIX_FMT_YUV422P;
     out_stream->codecpar->width = 640;
     out_stream->codecpar->height = 480;
-    */
+
+    sws_ctx = sws_getContext(in_codecpar->width,
+                             in_codecpar->height,
+                             (AVPixelFormat)in_codecpar->format,
+                             640,
+                             480,
+                             (AVPixelFormat)out_stream->codecpar->format,
+                             SWS_BILINEAR,
+                             NULL,
+                             NULL,
+                             NULL);
+    if (!sws_ctx) {
+      fprintf(stderr,
+              "Impossible to create scale context for the conversion "
+              "fmt:%s s:%dx%d -> fmt:%s s:%dx%d\n",
+              av_get_pix_fmt_name((AVPixelFormat)in_codecpar->format),
+              in_codecpar->width,
+              in_codecpar->height,
+              av_get_pix_fmt_name((AVPixelFormat)out_stream->codecpar->format),
+              640,
+              480);
+      ret = AVERROR(EINVAL);
+      goto end;
+    }
+    sws_init_context(sws_ctx, NULL, NULL);
   }
+
   av_dump_format(ofmt_ctx, 0, out_filename, 1);
-  //  ofmt_ctx->video_codec->w
+
+  for (i = 0; i < ifmt_ctx->nb_streams; i++) {
+    input_codec = avcodec_find_decoder(ifmt_ctx->streams[i]->codecpar->codec_id);
+    if (input_codec->type == AVMEDIA_TYPE_VIDEO) {
+      icodecctx = avcodec_alloc_context3(input_codec);
+      avcodec_parameters_to_context(icodecctx, ifmt_ctx->streams[i]->codecpar);
+      avcodec_open2(icodecctx, input_codec, NULL);
+      break;
+    }
+  }
+  //	/* find the mpeg1video encoder */
+  //	input_codec = avcodec_find_encoder_by_name("mpeg1video");
+  //	if (!input_codec) {
+  //		fprintf(stderr, "Codec '%s' not found\n", "mpeg1video");
+  //		exit(1);
+  //	}
+  //	icodecctx = avcodec_alloc_context3(input_codec);
+  //	if (!icodecctx) {
+  //		fprintf(stderr, "Could not allocate video codec context\n");
+  //		exit(1);
+  //	}
+  //	printf("OK\n");
+  //	/* put sample parameters */
+  //	icodecctx->bit_rate = 400000;
+  //	/* resolution must be a multiple of two */
+  //	icodecctx->width = src_w;
+  //	icodecctx->height = src_h;
+  //	/* frames per second */
+  //	icodecctx->time_base = (AVRational){1, 25};
+  //	icodecctx->framerate = (AVRational){25, 1};
+  //	/* emit one intra frame every ten frames
+  //	 * check frame pict_type before passing frame
+  //	 * to encoder, if frame->pict_type is AV_PICTURE_TYPE_I
+  //	 * then gop_size is ignored and the output of encoder
+  //	 * will always be I frame irrespective to gop_size
+  //	 */
+  //	icodecctx->gop_size = 10;
+  //	icodecctx->max_b_frames = 1;
+  //	icodecctx->pix_fmt = AV_PIX_FMT_YUV420P;
+
+  for (i = 0; i < ofmt_ctx->nb_streams; i++) {
+    output_codec = avcodec_find_decoder(ofmt_ctx->streams[i]->codecpar->codec_id);
+    if (output_codec->type == AVMEDIA_TYPE_VIDEO) {
+      ocodecctx = avcodec_alloc_context3(output_codec);
+      avcodec_parameters_to_context(ocodecctx, ofmt_ctx->streams[i]->codecpar);
+      avcodec_open2(ocodecctx, output_codec, NULL);
+      break;
+    }
+  }
 
   if (!(ofmt->flags & AVFMT_NOFILE)) {
     ret = avio_open(&ofmt_ctx->pb, out_filename, AVIO_FLAG_WRITE);
@@ -217,6 +303,55 @@ int program::run() {
 
     av_copy_packet(pkt_copy_, &pkt);
     AVPacket &pkt_copy = *pkt_copy_;
+
+    AVFrame *input_frame = av_frame_alloc();
+    AVFrame *output_frame = av_frame_alloc();
+    av_image_alloc(input_frame->data, input_frame->linesize, src_w, src_h, video_format, 32);
+
+    {
+      int ret = avcodec_send_packet(icodecctx, &pkt);
+      if (ret < 0) {
+        return 1;
+      }
+      do {
+        ret = avcodec_receive_frame(icodecctx, input_frame);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+          break;
+        } else if (ret < 0) {
+          fprintf(stderr, "Error during decode (%d)\n", ret);  // get_error_text(ret));
+          break;
+        } else {
+          //*data_present += frame->nb_samples > 0;
+          printf("read data: %d\n", input_frame->nb_samples);
+        }
+      } while (ret > 0);
+    }
+
+    av_image_alloc(output_frame->data, output_frame->linesize, 640, 480, AV_PIX_FMT_YUV420P, 32);
+    output_frame->width = 640;
+    output_frame->height = 480;
+    output_frame->format = AV_PIX_FMT_YUV420P;
+
+    int rets = sws_scale(sws_ctx,
+                         (const uint8_t *const *)input_frame->data,
+                         input_frame->linesize,
+                         0,
+                         input_frame->height,
+                         output_frame->data,
+                         output_frame->linesize);
+    printf("sws_scale: %d\n", rets);
+
+    AVPacket pkt_out;
+    pkt_out.data = NULL;
+    pkt_out.size = 0;
+    av_init_packet(&pkt_out);
+
+    //		int ret = avcodec_encode_video2(ocodecctx, &pkt_out, output_frame, &got_frame);
+    //		printf("ret was: %d, got: %d, ocodecctx: %p\n", ret, got_frame, ocodecctx);
+    //		//	sws_freeContext(sws_c);
+
+    int retx = avcodec_receive_packet(ocodecctx, &pkt);
+    printf("ret recv pkt = %d\n", retx);
 
     ret = av_write_frame(ofmt_ctx, &pkt);
     if (ret < 0) {
