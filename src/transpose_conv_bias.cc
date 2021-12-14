@@ -34,13 +34,17 @@ constexpr int kOutputTensor = 0;
 // https://github.com/tensorflow/tensorflow/blob/master/tensorflow/lite/kernels/internal/reference/reference_ops.h
 // https://github.com/tensorflow/tensorflow/blob/master/tensorflow/lite/kernels/transpose_conv.cc
 
-inline void TransposeConvBias(
-    const ::tflite::ConvParams& params,
-    const ::tflite::RuntimeShape& input_shape, const float* input_data,
-    const ::tflite::RuntimeShape& filter_shape, const float* filter_data,
-    const ::tflite::RuntimeShape& bias_shape, const float* bias_data,
-    const ::tflite::RuntimeShape& output_shape, float* output_data,
-    const ::tflite::RuntimeShape& im2col_shape, float* im2col_data) {
+inline void TransposeConvBias(const ::tflite::ConvParams& params,
+                              const ::tflite::RuntimeShape& input_shape,
+                              const float* input_data,
+                              const ::tflite::RuntimeShape& filter_shape,
+                              const float* filter_data,
+                              const ::tflite::RuntimeShape& bias_shape,
+                              const float* bias_data,
+                              const ::tflite::RuntimeShape& output_shape,
+                              float* output_data,
+                              const ::tflite::RuntimeShape& im2col_shape,
+                              float* im2col_data) {
   // Start of copy from
   // https://github.com/tensorflow/tensorflow/blob/master/tensorflow/lite/kernels/internal/reference/reference_ops.h
   const int stride_width = params.stride_width;
@@ -71,8 +75,7 @@ inline void TransposeConvBias(
     for (int out_y = 0; out_y < output_height; out_y++) {
       for (int out_x = 0; out_x < output_width; out_x++) {
         for (int out_channel = 0; out_channel < output_depth; out_channel++) {
-          output_data[Offset(output_shape, batch, out_y, out_x, out_channel)] =
-              bias_data[out_channel];
+          output_data[Offset(output_shape, batch, out_y, out_x, out_channel)] = bias_data[out_channel];
         }
       }
     }
@@ -85,22 +88,15 @@ inline void TransposeConvBias(
           const int out_y_origin = (in_y * stride_height) - pad_height;
           for (int filter_y = 0; filter_y < filter_height; ++filter_y) {
             for (int filter_x = 0; filter_x < filter_width; ++filter_x) {
-              for (int out_channel = 0; out_channel < output_depth;
-                   ++out_channel) {
+              for (int out_channel = 0; out_channel < output_depth; ++out_channel) {
                 // Compute output element location
                 const int out_x = out_x_origin + filter_x;
                 const int out_y = out_y_origin + filter_y;
                 // We cannot accumulate out of bounds
-                if ((out_x >= 0) && (out_x < output_width) && (out_y >= 0) &&
-                    (out_y < output_height)) {
-                  float input_value = input_data[Offset(
-                      input_shape, batch, in_y, in_x, in_channel)];
-                  float filter_value =
-                      filter_data[Offset(filter_shape, out_channel, filter_y,
-                                         filter_x, in_channel)];
-                  output_data[Offset(output_shape, batch, out_y, out_x,
-                                     out_channel)] +=
-                      input_value * filter_value;
+                if ((out_x >= 0) && (out_x < output_width) && (out_y >= 0) && (out_y < output_height)) {
+                  float input_value = input_data[Offset(input_shape, batch, in_y, in_x, in_channel)];
+                  float filter_value = filter_data[Offset(filter_shape, out_channel, filter_y, filter_x, in_channel)];
+                  output_data[Offset(output_shape, batch, out_y, out_x, out_channel)] += input_value * filter_value;
                 }
               }
             }
@@ -119,13 +115,11 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE_EQ(context, ::tflite::NumInputs(node), 3);
   TF_LITE_ENSURE_EQ(context, ::tflite::NumOutputs(node), 1);
 
-  const TfLiteTensor* weights =
-      ::tflite::GetInput(context, node, kWeightsTensor);
+  const TfLiteTensor* weights = ::tflite::GetInput(context, node, kWeightsTensor);
   TF_LITE_ENSURE(context, weights != nullptr);
   const TfLiteTensor* bias = ::tflite::GetInput(context, node, kBiasTensor);
   TF_LITE_ENSURE(context, bias != nullptr);
-  const TfLiteTensor* input =
-      ::tflite::GetInput(context, node, kDataInputTensor);
+  const TfLiteTensor* input = ::tflite::GetInput(context, node, kDataInputTensor);
   TF_LITE_ENSURE(context, input != nullptr);
   TfLiteTensor* output = ::tflite::GetOutput(context, node, kOutputTensor);
   TF_LITE_ENSURE(context, output != nullptr);
@@ -135,8 +129,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE_EQ(context, ::tflite::NumDimensions(bias), 1);
 
   // Start of MediaPipe modificiation.
-  TF_LITE_ENSURE_EQ(context, ::tflite::SizeOfDimension(weights, 0),
-                    ::tflite::SizeOfDimension(bias, 0));
+  TF_LITE_ENSURE_EQ(context, ::tflite::SizeOfDimension(weights, 0), ::tflite::SizeOfDimension(bias, 0));
 
   // Currently only supports float32.
   const TfLiteType data_type = input->type;
@@ -147,15 +140,12 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   // Ensure that weights and inputs have the same channel dimension.
   // Note: TOCO will reorder weights in the following format: OHWI.
-  TF_LITE_ENSURE_EQ(context, ::tflite::SizeOfDimension(input, 3),
-                    ::tflite::SizeOfDimension(weights, 3));
+  TF_LITE_ENSURE_EQ(context, ::tflite::SizeOfDimension(input, 3), ::tflite::SizeOfDimension(weights, 3));
 
   // Ensure that weights and bias have the same output channel dimension.
-  TF_LITE_ENSURE_EQ(context, ::tflite::SizeOfDimension(weights, 0),
-                    ::tflite::SizeOfDimension(bias, 0));
+  TF_LITE_ENSURE_EQ(context, ::tflite::SizeOfDimension(weights, 0), ::tflite::SizeOfDimension(bias, 0));
 
-  const auto* params = reinterpret_cast<const TfLiteTransposeConvParams*>(
-      node->custom_initial_data);
+  const auto* params = reinterpret_cast<const TfLiteTransposeConvParams*>(node->custom_initial_data);
   const int filter_width = ::tflite::SizeOfDimension(weights, 2);
   const int filter_height = ::tflite::SizeOfDimension(weights, 1);
   const int stride_width = params->stride_width;
@@ -170,35 +160,27 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   TfLitePaddingValues padding_size{0, 0};
   if (params->padding == kTfLitePaddingSame) {
-    padding_size.height =
-        std::max(0, filter_height - (in_height - 1) % stride_height - 1);
-    padding_size.width =
-        std::max(0, filter_width - (in_width - 1) % stride_width - 1);
+    padding_size.height = std::max(0, filter_height - (in_height - 1) % stride_height - 1);
+    padding_size.width = std::max(0, filter_width - (in_width - 1) % stride_width - 1);
   }
-  output_shape_array->data[1] =
-      stride_height * (in_height - 1) + filter_height - padding_size.height;
-  output_shape_array->data[2] =
-      stride_width * (in_width - 1) + filter_width - padding_size.width;
-  TF_LITE_ENSURE_OK(context,
-                    context->ResizeTensor(context, output, output_shape_array));
+  output_shape_array->data[1] = stride_height * (in_height - 1) + filter_height - padding_size.height;
+  output_shape_array->data[2] = stride_width * (in_width - 1) + filter_width - padding_size.width;
+  TF_LITE_ENSURE_OK(context, context->ResizeTensor(context, output, output_shape_array));
   return kTfLiteOk;
   // End of MediaPipe modification.
 }
 
 TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
-  const TfLiteTensor* weights =
-      ::tflite::GetInput(context, node, kWeightsTensor);
+  const TfLiteTensor* weights = ::tflite::GetInput(context, node, kWeightsTensor);
   TF_LITE_ENSURE(context, weights != nullptr);
   const TfLiteTensor* bias = ::tflite::GetInput(context, node, kBiasTensor);
   TF_LITE_ENSURE(context, bias != nullptr);
-  const TfLiteTensor* input =
-      ::tflite::GetInput(context, node, kDataInputTensor);
+  const TfLiteTensor* input = ::tflite::GetInput(context, node, kDataInputTensor);
   TF_LITE_ENSURE(context, input != nullptr);
   TfLiteTensor* output = ::tflite::GetOutput(context, node, kOutputTensor);
   TF_LITE_ENSURE(context, output != nullptr);
 
-  const auto* params = reinterpret_cast<const TfLiteTransposeConvParams*>(
-      node->custom_initial_data);
+  const auto* params = reinterpret_cast<const TfLiteTransposeConvParams*>(node->custom_initial_data);
 
   const int filter_width = ::tflite::SizeOfDimension(weights, 2);
   const int filter_height = ::tflite::SizeOfDimension(weights, 1);
@@ -209,10 +191,8 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
   TfLitePaddingValues padding_size{0, 0};
   if (params->padding == kTfLitePaddingSame) {
-    padding_size.height =
-        std::max(0, filter_height - (in_height - 1) % stride_height - 1);
-    padding_size.width =
-        std::max(0, filter_width - (in_width - 1) % stride_width - 1);
+    padding_size.height = std::max(0, filter_height - (in_height - 1) % stride_height - 1);
+    padding_size.width = std::max(0, filter_width - (in_width - 1) % stride_width - 1);
   }
 
   // Start of MediaPipe modificiation.
@@ -227,26 +207,26 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
       op_params.stride_width = stride_width;
       op_params.stride_height = stride_height;
 
-      TransposeConvBias(
-          op_params, ::tflite::GetTensorShape(input),
-          ::tflite::GetTensorData<float>(input),
-          ::tflite::GetTensorShape(weights),
-          ::tflite::GetTensorData<float>(weights),
-          ::tflite::GetTensorShape(bias), ::tflite::GetTensorData<float>(bias),
-          ::tflite::GetTensorShape(output),
-          ::tflite::GetTensorData<float>(output),
-          // Last two args specify im2col which reference_ops ignores.
-          // (Note this does not lead to a performance regression, as the
-          // previous optimized version was just a copy of the reference code.)
-          // TODO: Allocate im2col tensors and switch to
-          // optimized_ops.
-          ::tflite::GetTensorShape(output),
-          ::tflite::GetTensorData<float>(output));
+      TransposeConvBias(op_params,
+                        ::tflite::GetTensorShape(input),
+                        ::tflite::GetTensorData<float>(input),
+                        ::tflite::GetTensorShape(weights),
+                        ::tflite::GetTensorData<float>(weights),
+                        ::tflite::GetTensorShape(bias),
+                        ::tflite::GetTensorData<float>(bias),
+                        ::tflite::GetTensorShape(output),
+                        ::tflite::GetTensorData<float>(output),
+                        // Last two args specify im2col which reference_ops ignores.
+                        // (Note this does not lead to a performance regression, as the
+                        // previous optimized version was just a copy of the reference code.)
+                        // TODO: Allocate im2col tensors and switch to
+                        // optimized_ops.
+                        ::tflite::GetTensorShape(output),
+                        ::tflite::GetTensorData<float>(output));
       break;
     }
     default:
-      context->ReportError(context, "Type %d, not currently supported.",
-                           input->type);
+      context->ReportError(context, "Type %d, not currently supported.", input->type);
       return kTfLiteError;
   }
 

@@ -1,0 +1,21 @@
+Language: Cpp
+BasedOnStyle: Google
+Standard: Cpp11
+
+ColumnLimit: 120
+
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortLambdasOnASingleLine: Empty
+
+# Disable the offset for the access modifiers (e.g. `public:`)
+AccessModifierOffset: -2
+
+# Disable arguments bin packing
+BinPackArguments: false
+BinPackParameters: false
+
+#AlignAfterOpenBracket: AlwaysBreak
+#AlignConsecutiveAssignments: true
+
+# Allows grouping headers into coherent blocks. Google style: Regroup
+IncludeBlocks: Preserve
