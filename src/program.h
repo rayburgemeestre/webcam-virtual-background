@@ -26,22 +26,31 @@ enum segmentation_mode {
   black_background,
   blur_background,
   virtual_background,
-  virtual_background_blurred
+  virtual_background_blurred,
+  snowflakes,
 };
 
 class program {
 private:
+  std::thread runner_;
+  bool stop_ = false;
+
+  std::unique_ptr<tflite::FlatBufferModel> tflite_model;
+  std::unique_ptr<tflite::ops::builtin::BuiltinOpResolver> resolver;
+  std::unique_ptr<tflite::InterpreterBuilder> builder;
+
   float sigma_bg_blur = 4.;
   float sigma_segmask = 1.2;
   int src_w = 640;
   int src_h = 480;
   std::string bg_file = "backgrounds/bg.ayuv";
   std::map<segmentation_model, model_meta_info> models;
-  segmentation_mode mode;
-  segmentation_model model_selected;
+  segmentation_mode mode = segmentation_mode::blur_background;
+  segmentation_model model_selected = segmentation_model::google_meet_full;
   model_meta_info model;
-  const char *in_filename = nullptr;
-  const char *out_filename = nullptr;
+  // TODO: make these strings, and configurable.
+  const char *in_filename = "/dev/video8";
+  const char *out_filename = "/dev/video9";
   bool animate = true;
 
   std::unique_ptr<tflite::Interpreter> interpreter;
@@ -62,6 +71,11 @@ public:
   program(int argc, char **argv);
 
   int run();
+  unsigned set_mode(const std::vector<std::string> &input);
+  unsigned set_model(const std::vector<std::string> &input);
+  unsigned start(const std::vector<std::string> &input);
+  unsigned stop(const std::vector<std::string> &input);
+
   void load_tensorflow_model();
   void process_frame(AVPacket &pkt_copy);
   void fill_input_tensor(const AVPacket &pkt_copy);

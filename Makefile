@@ -8,6 +8,7 @@ configure:  ## configure ffmpeg, tensorflow and mediapipe dependencies
 	make ffmpeg
 	make tf
 	make mediapipe
+	make cpp-readline
 
 ffmpeg:
 	mkdir -p build
@@ -34,18 +35,29 @@ mediapipe:
 		git clone https://github.com/google/mediapipe -b v0.8.7.1
 			# no need to compile this one
 
+cpp-readline:
+	sudo apt-get install libreadline-dev -y && \
+	pushd build && \
+		git clone https://github.com/Svalorzen/cpp-readline || true && \
+		pushd cpp-readline && \
+			mkdir -p build && \
+			pushd build && \
+			cmake .. && \
+			make -j 8
+
 compile:  ## compile project
 	LD_LIBRARY_PATH=$$LD_LIBRARY_PATH:$$PWD/ffmpeg/lib:$$PWD/build/tensorflow/bazel-bin/tensorflow/lite \
-	#PKG_CONFIG_PATH=$$PWD/ffmpeg/lib/pkgconfig c++ -O0 -g --std=c++11 -I$$PWD/ffmpeg/include -I$$PWD/build/tensorflow/ -I$$PWD/build/tensorflow/third_party/ \
-	PKG_CONFIG_PATH=$$PWD/ffmpeg/lib/pkgconfig c++ -O2 --std=c++11 -I$$PWD/ffmpeg/include -I$$PWD/build/tensorflow/ -I$$PWD/build/tensorflow/third_party/ \
+	#PKG_CONFIG_PATH=$$PWD/ffmpeg/lib/pkgconfig c++ -O2 --std=c++11 -I$$PWD/ffmpeg/include -I$$PWD/build/tensorflow/ -I$$PWD/build/tensorflow/third_party/ \
+	PKG_CONFIG_PATH=$$PWD/ffmpeg/lib/pkgconfig c++ -O0 -g --std=c++14 -I$$PWD/ffmpeg/include -I$$PWD/build/tensorflow/ -I$$PWD/build/tensorflow/third_party/ \
 	-I$$PWD/ffmpeg-4.4 \
 	-I$$PWD/build/mediapipe \
 	-I$$PWD/build/tensorflow/tensorflow/lite/tools/make/downloads/flatbuffers/include \
+	-I$$PWD/build/cpp-readline/src \
 	-L$$PWD/ffmpeg/lib \
 	-L$$PWD/build/tensorflow/bazel-bin/tensorflow/lite \
 	-Wl,-rpath=lib \
-	src/main.cpp src/transpose_conv_bias.cc src/blur_float.cpp \
-	-lavdevice -lavformat -lavcodec -lavutil -ltensorflowlite -lswscale \
+	src/main.cpp src/transpose_conv_bias.cc src/blur_float.cpp build/cpp-readline/src/Console.cpp \
+	-lavdevice -lavformat -lavcodec -lavutil -ltensorflowlite -lswscale -lreadline -lpthread \
 	-o main
 
 device:  ## setup two devices /dev/video8 and /dev/video9
@@ -61,7 +73,7 @@ env:
 
 run:  ## run project
 	LD_LIBRARY_PATH=$$LD_LIBRARY_PATH:$$PWD/ffmpeg/lib:$$PWD/build/tensorflow/bazel-bin/tensorflow/lite \
-		./main /dev/video8 /dev/video9 1 1
+		./main /dev/video8 /dev/video9 2 1
 
 run2:  ## run project
 	LD_LIBRARY_PATH=$$LD_LIBRARY_PATH:$$PWD/ffmpeg/lib:$$PWD/build/tensorflow/bazel-bin/tensorflow/lite \

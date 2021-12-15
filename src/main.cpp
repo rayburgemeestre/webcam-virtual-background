@@ -3,8 +3,15 @@
 #include <iostream>
 #include <string>
 
+#include "Console.hpp"
 #include "ffmpeg_headers.hpp"
 #include "program.h"
+
+#include <iostream>
+#include <string>
+
+namespace cr = CppReadline;
+using ret = cr::Console::ReturnCode;
 
 program::program(int argc, char **argv)
     : models({
@@ -12,24 +19,91 @@ program::program(int argc, char **argv)
           {google_meet_lite, {"models/segm_lite_v681.tflite", 160, 96}},
           {mlkit, {"models/selfiesegmentation_mlkit-256x256-2021_01_19-v1215.f16.tflite", 256, 256}},
       }) {
+  cr::Console c("> ");
+  //	c.registerCommand("set-input", std::bind(&program::set_input, this, std::placeholders::_1));
+  //	c.registerCommand("set-output", std::bind(&program::set_output, this, std::placeholders::_1));
+  c.registerCommand("set-mode", std::bind(&program::set_mode, this, std::placeholders::_1));
+  c.registerCommand("set-model", std::bind(&program::set_model, this, std::placeholders::_1));
+  c.registerCommand("start", std::bind(&program::start, this, std::placeholders::_1));
+  c.registerCommand("stop", std::bind(&program::stop, this, std::placeholders::_1));
+  c.executeCommand("help");
+
+  int retCode;
+  do {
+    retCode = c.readLine();
+    if (retCode == ret::Ok)
+      c.setGreeting("> ");
+    else
+      c.setGreeting("!> ");
+
+    if (retCode == 1) {
+      std::cout << "Received error code 1\n";
+    } else if (retCode == 2) {
+      std::cout << "Received error code 2\n";
+    }
+  } while (retCode != ret::Quit);
+
   if (argc < 5) {
     printf(
         "usage: %s input output mode model\n"
         "API example program to remux a media file with libavformat and libavcodec.\n"
         "The output format is guessed according to the file extension.\n"
-        "mode can be: 1 (black bg), 2 (blur bg), 3 (vbg), 4 (vbg+blur)\n"
+        "mode can be: 1 (black bg), 2 (blur bg), 3 (vbg), 4 (vbg+blur), 5 (snowflakes)\n"
         "model can be: 1 (google meet v679 full), 2 (google meet v681 lite), 3 (mlkit)\n"
         "\n",
         argv[0]);
     std::exit(1);
   }
-  in_filename = argv[1];
-  out_filename = argv[2];
+  //  in_filename = argv[1];
+  //  out_filename = argv[2];
+}
+
+unsigned program::set_mode(const std::vector<std::string> &input) {
+  const auto usage = [=]() {
+    std::cout << "Usage: " << input[0] << " < mode >\n";
+    std::cout << "Valid modes:\n";
+    std::cout << "- normal\n";
+    std::cout << "- black\n";
+    std::cout << "- blur\n";
+    std::cout << "- virtual\n";
+    std::cout << "- animated\n";
+    std::cout << "- snowflakes" << std::endl;
+  };
+  if (input.size() != 2) {
+    usage();
+    return 1;
+  }
+
+  animate = false;
+  if (input[1] == "normal") {
+    mode = segmentation_mode::bypass;
+  } else if (input[1] == "black") {
+    mode = segmentation_mode::black_background;
+  } else if (input[1] == "blur") {
+    mode = segmentation_mode::blur_background;
+  } else if (input[1] == "virtual") {
+    mode = segmentation_mode::virtual_background;
+  } else if (input[1] == "animated") {
+    mode = segmentation_mode::virtual_background;
+    animate = true;
+  } else if (input[1] == "snowflakes") {
+    mode = segmentation_mode::snowflakes;
+  } else {
+    usage();
+    return 1;
+  }
+  return 0;
+}
+
+unsigned program::set_model(const std::vector<std::string> &input) {
+  model_selected = segmentation_model::google_meet_full;
+  return 0;
+}
+
+unsigned program::start(const std::vector<std::string> &input) {
   if (const char *env_p = std::getenv("BG")) {
     bg_file = std::string(env_p);
   }
-  mode = (segmentation_mode)std::stoi(argv[3]);
-  model_selected = (segmentation_model)std::stoi(argv[4]);
   model = models[model_selected];
 
   // Load a background to test
@@ -62,11 +136,26 @@ program::program(int argc, char **argv)
       ss.clear();
     }
   }
+
+  runner_ = std::thread([&]() {
+    stop_ = false;
+    run();
+  });
+
+  return 0;
+}
+
+unsigned program::stop(const std::vector<std::string> &input) {
+  std::cout << "stopping..." << std::endl;
+  stop_ = true;
+  if (runner_.joinable()) runner_.join();
+  return 0;
 }
 
 int program::run() {
   // Load model
-  std::unique_ptr<tflite::FlatBufferModel> tflite_model(tflite::FlatBufferModel::BuildFromFile(model.filename.c_str()));
+  tflite_model =
+      std::unique_ptr<tflite::FlatBufferModel>(tflite::FlatBufferModel::BuildFromFile(model.filename.c_str()));
   if (!tflite_model) {
     printf("Failed to model\n");
     exit(0);
@@ -74,11 +163,11 @@ int program::run() {
     printf("Loaded model\n");
   }
 
-  tflite::ops::builtin::BuiltinOpResolver resolver;
+  resolver = std::make_unique<tflite::ops::builtin::BuiltinOpResolver>();
   // Custom op for Google Meet network
-  resolver.AddCustom("Convolution2DTransposeBias", mediapipe::tflite_operations::RegisterConvolution2DTransposeBias());
-  tflite::InterpreterBuilder builder(*tflite_model, resolver);
-  builder(&interpreter);
+  resolver->AddCustom("Convolution2DTransposeBias", mediapipe::tflite_operations::RegisterConvolution2DTransposeBias());
+  builder.reset(new tflite::InterpreterBuilder(*tflite_model, *resolver));
+  (*builder)(&interpreter);
 
   // Resize input tensors, if desired.
   if (interpreter->AllocateTensors() != kTfLiteOk) {
@@ -186,7 +275,7 @@ int program::run() {
     goto end;
   }
 
-  while (1) {
+  while (!stop_) {
     mask.clear();
     background_y.clear();
     background_u.clear();
@@ -213,7 +302,7 @@ int program::run() {
         pkt.dts, in_stream->time_base, out_stream->time_base, AVRounding(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
     pkt.duration = av_rescale_q(pkt.duration, in_stream->time_base, out_stream->time_base);
     pkt.pos = -1;
-    log_packet(ofmt_ctx, &pkt, "out");
+    // log_packet(ofmt_ctx, &pkt, "out");
 
     static AVPacket *pkt_copy_ = nullptr;
     if (pkt_copy_ == nullptr) {
@@ -320,6 +409,20 @@ void program::process_frame(AVPacket &pkt_copy) {
           pkt_copy.data[index_U] = (pkt_copy.data[index_U] * mask_alpha_ratio) + float(*vbg++ * bg_alpha_ratio);
           pkt_copy.data[index_V] = (pkt_copy.data[index_V] * mask_alpha_ratio) + float(*vbg++ * bg_alpha_ratio);
           break;
+        case snowflakes: {
+          pkt_copy.data[index_Y] = (pkt_copy.data[index_Y] * mask_alpha_ratio) + float(255 * *bg_y++ * bg_alpha_ratio);
+          pkt_copy.data[index_U] = (pkt_copy.data[index_U] * mask_alpha_ratio) + float(255 * *bg_u++ * bg_alpha_ratio);
+          pkt_copy.data[index_V] = (pkt_copy.data[index_V] * mask_alpha_ratio) + float(255 * *bg_v++ * bg_alpha_ratio);
+
+          // TODO: do this probably on the background mask, bg_y/u/v itself ?
+          double X = x;
+          double Y = y;
+          double dist = sqrt(((X - 640 / 2) * (X - 640 / 2)) + ((Y - 480 / 2) * (Y - 480 / 2))) / (640 / 2);
+          pkt_copy.data[index_Y] *= dist;
+          pkt_copy.data[index_U] *= dist;
+          pkt_copy.data[index_V] *= dist;
+          break;
+        }
       }
     }
   }
