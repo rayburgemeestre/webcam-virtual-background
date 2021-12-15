@@ -77,6 +77,7 @@ public:
   unsigned stop(const std::vector<std::string> &input);
 
   void load_tensorflow_model();
+  void reset();
   void process_frame(AVPacket &pkt_copy);
   void fill_input_tensor(const AVPacket &pkt_copy);
   void upscale_segregation_mask(const AVPacket &pkt_copy);

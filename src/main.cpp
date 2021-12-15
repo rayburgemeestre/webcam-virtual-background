@@ -20,8 +20,8 @@ program::program(int argc, char **argv)
           {mlkit, {"models/selfiesegmentation_mlkit-256x256-2021_01_19-v1215.f16.tflite", 256, 256}},
       }) {
   cr::Console c("> ");
-  //	c.registerCommand("set-input", std::bind(&program::set_input, this, std::placeholders::_1));
-  //	c.registerCommand("set-output", std::bind(&program::set_output, this, std::placeholders::_1));
+  // c.registerCommand("set-input", std::bind(&program::set_input, this, std::placeholders::_1));
+  // c.registerCommand("set-output", std::bind(&program::set_output, this, std::placeholders::_1));
   c.registerCommand("set-mode", std::bind(&program::set_mode, this, std::placeholders::_1));
   c.registerCommand("set-model", std::bind(&program::set_model, this, std::placeholders::_1));
   c.registerCommand("start", std::bind(&program::start, this, std::placeholders::_1));
@@ -36,26 +36,10 @@ program::program(int argc, char **argv)
     else
       c.setGreeting("!> ");
 
-    if (retCode == 1) {
-      std::cout << "Received error code 1\n";
-    } else if (retCode == 2) {
-      std::cout << "Received error code 2\n";
+    if (retCode != 0) {
+      std::cout << "Received error code " << retCode << std::endl;
     }
   } while (retCode != ret::Quit);
-
-  if (argc < 5) {
-    printf(
-        "usage: %s input output mode model\n"
-        "API example program to remux a media file with libavformat and libavcodec.\n"
-        "The output format is guessed according to the file extension.\n"
-        "mode can be: 1 (black bg), 2 (blur bg), 3 (vbg), 4 (vbg+blur), 5 (snowflakes)\n"
-        "model can be: 1 (google meet v679 full), 2 (google meet v681 lite), 3 (mlkit)\n"
-        "\n",
-        argv[0]);
-    std::exit(1);
-  }
-  //  in_filename = argv[1];
-  //  out_filename = argv[2];
 }
 
 unsigned program::set_mode(const std::vector<std::string> &input) {
@@ -153,27 +137,9 @@ unsigned program::stop(const std::vector<std::string> &input) {
 }
 
 int program::run() {
-  // Load model
-  tflite_model =
-      std::unique_ptr<tflite::FlatBufferModel>(tflite::FlatBufferModel::BuildFromFile(model.filename.c_str()));
-  if (!tflite_model) {
-    printf("Failed to model\n");
-    exit(0);
-  } else {
-    printf("Loaded model\n");
-  }
+  load_tensorflow_model();
 
-  resolver = std::make_unique<tflite::ops::builtin::BuiltinOpResolver>();
-  // Custom op for Google Meet network
-  resolver->AddCustom("Convolution2DTransposeBias", mediapipe::tflite_operations::RegisterConvolution2DTransposeBias());
-  builder.reset(new tflite::InterpreterBuilder(*tflite_model, *resolver));
-  (*builder)(&interpreter);
-
-  // Resize input tensors, if desired.
-  if (interpreter->AllocateTensors() != kTfLiteOk) {
-    fprintf(stderr, "Something wrong");
-    exit(1);
-  }
+  // The rest of the run function is based on the remuxing.c example provided by ffmpeg
 
   AVOutputFormat *ofmt = NULL;
   AVFormatContext *ifmt_ctx = NULL, *ofmt_ctx = NULL;
@@ -276,10 +242,7 @@ int program::run() {
   }
 
   while (!stop_) {
-    mask.clear();
-    background_y.clear();
-    background_u.clear();
-    background_v.clear();
+    reset();
 
     AVStream *in_stream, *out_stream;
 
@@ -346,7 +309,34 @@ end:
 }
 
 void program::load_tensorflow_model() {
-  // TODO : move the code into here, properly.
+  // Load model
+  tflite_model =
+      std::unique_ptr<tflite::FlatBufferModel>(tflite::FlatBufferModel::BuildFromFile(model.filename.c_str()));
+  if (!tflite_model) {
+    printf("Failed to model\n");
+    exit(0);
+  } else {
+    printf("Loaded model\n");
+  }
+
+  resolver = std::make_unique<tflite::ops::builtin::BuiltinOpResolver>();
+  // Custom op for Google Meet network
+  resolver->AddCustom("Convolution2DTransposeBias", mediapipe::tflite_operations::RegisterConvolution2DTransposeBias());
+  builder.reset(new tflite::InterpreterBuilder(*tflite_model, *resolver));
+  (*builder)(&interpreter);
+
+  // Resize input tensors, if desired.
+  if (interpreter->AllocateTensors() != kTfLiteOk) {
+    fprintf(stderr, "Something wrong");
+    exit(1);
+  }
+}
+
+void program::reset() {
+  mask.clear();
+  background_y.clear();
+  background_u.clear();
+  background_v.clear();
 }
 
 void program::process_frame(AVPacket &pkt_copy) {
