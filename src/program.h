@@ -4,7 +4,10 @@
 #include <mutex>
 #include <thread>
 
+#include "process.hpp"
 #include "tensorflow.hpp"
+
+using namespace TinyProcessLib;
 
 // Implemented in blur_float.cpp
 extern void fast_gaussian_blur(float *&in, float *&out, int w, int h, float sigma);
@@ -23,17 +26,22 @@ struct model_meta_info {
 
 enum segmentation_mode {
   bypass = 0,
+  white_background,
   black_background,
   blur_background,
   virtual_background,
   virtual_background_blurred,
   snowflakes,
+  snowflakes_blur,
 };
 
 class program {
 private:
   std::thread runner_;
   bool stop_ = false;
+
+  std::unique_ptr<Process> process_;
+  std::thread process_runner_;
 
   std::unique_ptr<tflite::FlatBufferModel> tflite_model;
   std::unique_ptr<tflite::ops::builtin::BuiltinOpResolver> resolver;
@@ -45,7 +53,7 @@ private:
   int src_h = 480;
   std::string bg_file = "backgrounds/bg.ayuv";
   std::map<segmentation_model, model_meta_info> models;
-  segmentation_mode mode = segmentation_mode::blur_background;
+  segmentation_mode mode = segmentation_mode::virtual_background;
   segmentation_model model_selected = segmentation_model::google_meet_full;
   model_meta_info model;
   // TODO: make these strings, and configurable.
@@ -84,4 +92,5 @@ public:
   void blur_yuv();
   void set_virtual_background_source();
   void blur_virtual_background_itself();
+  void draw_snowflakes(AVPacket &pkt_copy);
 };

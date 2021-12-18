@@ -9,6 +9,7 @@ configure:  ## configure ffmpeg, tensorflow and mediapipe dependencies
 	make tf
 	make mediapipe
 	make cpp-readline
+	make tpl
 
 ffmpeg:
 	mkdir -p build
@@ -45,19 +46,31 @@ cpp-readline:
 			cmake .. && \
 			make -j 8
 
+tpl:
+	pushd build && \
+		git clone https://gitlab.com/eidheim/tiny-process-library || true && \
+		pushd tiny-process-library && \
+			mkdir -p build && \
+			pushd build && \
+			cmake .. && \
+			make -j 8
+
+
 compile:  ## compile project
 	LD_LIBRARY_PATH=$$LD_LIBRARY_PATH:$$PWD/ffmpeg/lib:$$PWD/build/tensorflow/bazel-bin/tensorflow/lite \
-	#PKG_CONFIG_PATH=$$PWD/ffmpeg/lib/pkgconfig c++ -O2 --std=c++11 -I$$PWD/ffmpeg/include -I$$PWD/build/tensorflow/ -I$$PWD/build/tensorflow/third_party/ \
-	PKG_CONFIG_PATH=$$PWD/ffmpeg/lib/pkgconfig c++ -O0 -g --std=c++14 -I$$PWD/ffmpeg/include -I$$PWD/build/tensorflow/ -I$$PWD/build/tensorflow/third_party/ \
+	#PKG_CONFIG_PATH=$$PWD/ffmpeg/lib/pkgconfig c++ -O0 -g --std=c++17 -I$$PWD/ffmpeg/include -I$$PWD/build/tensorflow/ -I$$PWD/build/tensorflow/third_party/ \
+	PKG_CONFIG_PATH=$$PWD/ffmpeg/lib/pkgconfig c++ -O2 --std=c++17 -I$$PWD/ffmpeg/include -I$$PWD/build/tensorflow/ -I$$PWD/build/tensorflow/third_party/ \
 	-I$$PWD/ffmpeg-4.4 \
 	-I$$PWD/build/mediapipe \
 	-I$$PWD/build/tensorflow/tensorflow/lite/tools/make/downloads/flatbuffers/include \
 	-I$$PWD/build/cpp-readline/src \
+	-I$$PWD/build/tiny-process-library \
 	-L$$PWD/ffmpeg/lib \
 	-L$$PWD/build/tensorflow/bazel-bin/tensorflow/lite \
 	-Wl,-rpath=lib \
-	src/main.cpp src/transpose_conv_bias.cc src/blur_float.cpp build/cpp-readline/src/Console.cpp \
+	src/main.cpp src/transpose_conv_bias.cc src/blur_float.cpp build/cpp-readline/src/Console.cpp src/snowflake.cpp \
 	-lavdevice -lavformat -lavcodec -lavutil -ltensorflowlite -lswscale -lreadline -lpthread \
+	$$PWD/build/tiny-process-library/build/libtiny-process-library.a \
 	-o main
 
 device:  ## setup two devices /dev/video8 and /dev/video9
@@ -66,7 +79,7 @@ device:  ## setup two devices /dev/video8 and /dev/video9
 	sudo modprobe v4l2loopback video_nr=7,8,9 exclusive_caps=1,1,1 card_label="Dummy Camera","Virtual YUV420P Camera","Virtual 640x480 420P TFlite Camera"
 
 link:  ## link /dev/video0 to /dev/video8 with 30fps, YUV420p pixel format and 640x480 resolution
-	ffmpeg -i /dev/video0 -f v4l2 -input_format mjpeg -framerate 10 -video_size 1024x680 -vf scale=640:480:force_original_aspect_ratio=increase,crop=640:480 -pix_fmt yuv420p -f v4l2 /dev/video8
+	ffmpeg -nostdin -i /dev/video0 -f v4l2 -input_format mjpeg -framerate 10 -video_size 1024x680 -vf scale=640:480:force_original_aspect_ratio=increase,crop=640:480 -pix_fmt yuv420p -f v4l2 /dev/video8
 
 env:
 	echo LD_LIBRARY_PATH=$$LD_LIBRARY_PATH:$$PWD/ffmpeg/lib:$$PWD/build/tensorflow/bazel-bin/tensorflow/lite

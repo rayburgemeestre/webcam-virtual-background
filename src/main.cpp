@@ -5,10 +5,11 @@
 
 #include "Console.hpp"
 #include "ffmpeg_headers.hpp"
+#include "math.hpp"
 #include "program.h"
+#include "snowflake.h"
 
-#include <iostream>
-#include <string>
+extern double tt;  // snowflake.cpp
 
 namespace cr = CppReadline;
 using ret = cr::Console::ReturnCode;
@@ -19,7 +20,7 @@ program::program(int argc, char **argv)
           {google_meet_lite, {"models/segm_lite_v681.tflite", 160, 96}},
           {mlkit, {"models/selfiesegmentation_mlkit-256x256-2021_01_19-v1215.f16.tflite", 256, 256}},
       }) {
-  cr::Console c("> ");
+  cr::Console c("cam> ");
   // c.registerCommand("set-input", std::bind(&program::set_input, this, std::placeholders::_1));
   // c.registerCommand("set-output", std::bind(&program::set_output, this, std::placeholders::_1));
   c.registerCommand("set-mode", std::bind(&program::set_mode, this, std::placeholders::_1));
@@ -32,9 +33,9 @@ program::program(int argc, char **argv)
   do {
     retCode = c.readLine();
     if (retCode == ret::Ok)
-      c.setGreeting("> ");
+      c.setGreeting("cam> ");
     else
-      c.setGreeting("!> ");
+      c.setGreeting("cam!> ");
 
     if (retCode != 0) {
       std::cout << "Received error code " << retCode << std::endl;
@@ -47,11 +48,13 @@ unsigned program::set_mode(const std::vector<std::string> &input) {
     std::cout << "Usage: " << input[0] << " < mode >\n";
     std::cout << "Valid modes:\n";
     std::cout << "- normal\n";
+    std::cout << "- white\n";
     std::cout << "- black\n";
     std::cout << "- blur\n";
     std::cout << "- virtual\n";
     std::cout << "- animated\n";
     std::cout << "- snowflakes" << std::endl;
+    std::cout << "- snowflakesblur" << std::endl;
   };
   if (input.size() != 2) {
     usage();
@@ -61,6 +64,8 @@ unsigned program::set_mode(const std::vector<std::string> &input) {
   animate = false;
   if (input[1] == "normal") {
     mode = segmentation_mode::bypass;
+  } else if (input[1] == "white") {
+    mode = segmentation_mode::white_background;
   } else if (input[1] == "black") {
     mode = segmentation_mode::black_background;
   } else if (input[1] == "blur") {
@@ -72,6 +77,8 @@ unsigned program::set_mode(const std::vector<std::string> &input) {
     animate = true;
   } else if (input[1] == "snowflakes") {
     mode = segmentation_mode::snowflakes;
+  } else if (input[1] == "snowflakesblur") {
+    mode = segmentation_mode::snowflakes_blur;
   } else {
     usage();
     return 1;
@@ -85,6 +92,16 @@ unsigned program::set_model(const std::vector<std::string> &input) {
 }
 
 unsigned program::start(const std::vector<std::string> &input) {
+  process_runner_ = std::thread([&]() {
+    process_.reset(new Process("make device ; make link 2>&1", "", [](const char *bytes, size_t n) {
+      // std::cout << "Output from stdout: " << std::string(bytes, n);
+    }));
+    auto exit_status = process_->get_exit_status();
+    std::cout << "Exit: " << exit_status << std::endl;
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
   if (const char *env_p = std::getenv("BG")) {
     bg_file = std::string(env_p);
   }
@@ -130,6 +147,9 @@ unsigned program::start(const std::vector<std::string> &input) {
 }
 
 unsigned program::stop(const std::vector<std::string> &input) {
+  std::cout << "stopping..." << std::endl;
+  process_->kill();
+  if (process_runner_.joinable()) process_runner_.join();
   std::cout << "stopping..." << std::endl;
   stop_ = true;
   if (runner_.joinable()) runner_.join();
@@ -354,16 +374,18 @@ void program::process_frame(AVPacket &pkt_copy) {
   // We need two copies of the mask for blurring
   blur_yuv();
 
-  float *bg_y = background_y.data();
-  float *bg_u = background_u.data();
-  float *bg_v = background_v.data();
-
   set_virtual_background_source();
 
   blur_virtual_background_itself();
 
   // blur the mask as well, since we scaled it up
   fast_gaussian_blur(mask_pixels, mask_out, src_w, src_h, sigma_segmask);
+
+  draw_snowflakes(pkt_copy);
+
+  float *bg_y = background_y.data();
+  float *bg_u = background_u.data();
+  float *bg_v = background_v.data();
 
   for (int y = 0; y < src_h; y++) {
     for (int x = 0; x < src_w; x++) {
@@ -377,6 +399,11 @@ void program::process_frame(AVPacket &pkt_copy) {
 
       // blend person on top of background using mask
       switch (mode) {
+        case white_background:
+          pkt_copy.data[index_Y] = (pkt_copy.data[index_Y] * mask_alpha_ratio) + float(0xFF * bg_alpha_ratio);
+          pkt_copy.data[index_U] = (pkt_copy.data[index_U] * mask_alpha_ratio) + float(0x80 * bg_alpha_ratio);
+          pkt_copy.data[index_V] = (pkt_copy.data[index_V] * mask_alpha_ratio) + float(0x80 * bg_alpha_ratio);
+          break;
         case black_background:
           pkt_copy.data[index_Y] = (pkt_copy.data[index_Y] * mask_alpha_ratio) + float(0x00 * bg_alpha_ratio);
           pkt_copy.data[index_U] = (pkt_copy.data[index_U] * mask_alpha_ratio) + float(0x80 * bg_alpha_ratio);
@@ -403,14 +430,12 @@ void program::process_frame(AVPacket &pkt_copy) {
           pkt_copy.data[index_Y] = (pkt_copy.data[index_Y] * mask_alpha_ratio) + float(255 * *bg_y++ * bg_alpha_ratio);
           pkt_copy.data[index_U] = (pkt_copy.data[index_U] * mask_alpha_ratio) + float(255 * *bg_u++ * bg_alpha_ratio);
           pkt_copy.data[index_V] = (pkt_copy.data[index_V] * mask_alpha_ratio) + float(255 * *bg_v++ * bg_alpha_ratio);
-
-          // TODO: do this probably on the background mask, bg_y/u/v itself ?
-          double X = x;
-          double Y = y;
-          double dist = sqrt(((X - 640 / 2) * (X - 640 / 2)) + ((Y - 480 / 2) * (Y - 480 / 2))) / (640 / 2);
-          pkt_copy.data[index_Y] *= dist;
-          pkt_copy.data[index_U] *= dist;
-          pkt_copy.data[index_V] *= dist;
+          break;
+        }
+        case snowflakes_blur: {
+          pkt_copy.data[index_Y] = (pkt_copy.data[index_Y] * mask_alpha_ratio) + float(255 * *bg_y++ * bg_alpha_ratio);
+          pkt_copy.data[index_U] = (pkt_copy.data[index_U] * mask_alpha_ratio) + float(255 * *bg_u++ * bg_alpha_ratio);
+          pkt_copy.data[index_V] = (pkt_copy.data[index_V] * mask_alpha_ratio) + float(255 * *bg_v++ * bg_alpha_ratio);
           break;
         }
       }
@@ -473,10 +498,11 @@ void program::blur_yuv() {
     float *bg_y2 = channel2.data();
     fast_gaussian_blur(bg_y, bg_y2, src_w, src_h, sigma_bg_blur);
   };
-  blur_channel(background_y);
-  blur_channel(background_u);
-  blur_channel(background_v);
-
+  if (mode != segmentation_mode::snowflakes) {
+    blur_channel(background_y);
+    blur_channel(background_u);
+    blur_channel(background_v);
+  }
   // gaussian the mask
   mask_pixels = mask.data();
   fast_gaussian_blur(mask_pixels, mask_out, src_w, src_h, sigma_segmask);
@@ -549,6 +575,102 @@ void program::fill_input_tensor(const AVPacket &pkt_copy) {
       *input++ = float(G / 255.0);
       *input++ = float(B / 255.0);
     }
+  }
+}
+
+void program::draw_snowflakes(AVPacket &pkt_copy) {
+  if (mode != segmentation_mode::snowflakes && mode != segmentation_mode::snowflakes_blur) {
+    return;
+  }
+
+  // initialize 500 flakes
+  static std::vector<snowflake> flakes;
+  if (flakes.empty()) {
+    for (int i = 0; i < 500; i++) {
+      flakes.push_back(snowflake{});
+    }
+  }
+
+  // update snowflake positions and global time
+  for (auto &snowflake : flakes) {
+    snowflake.update();
+  }
+  tt += 0.0004;
+
+  // draw each snowflake
+  size_t index = 0;
+  float *bg_y = background_y.data();
+  float *bg_u = background_u.data();
+  float *bg_v = background_v.data();
+
+  const auto yuv_to_rgb = [](auto Y, auto U, auto V, auto &R, auto &G, auto &B) {
+    B = 1.164 * (Y - 16) + 2.018 * (U - 128);
+    G = 1.164 * (Y - 16) - 0.813 * (V - 128) - 0.391 * (U - 128);
+    R = 1.164 * (Y - 16) + 1.596 * (V - 128);
+  };
+
+  const auto rgb_to_yuv = [](auto R, auto G, auto B, auto &Y, auto &U, auto &V) {
+    Y = (0.257 * R) + (0.504 * G) + (0.098 * B) + 16;
+    U = -(0.148 * R) - (0.291 * G) + (0.439 * B) + 128;
+    V = (0.439 * R) - (0.368 * G) - (0.071 * B) + 128;
+  };
+
+  for (auto &snowflake : flakes) {
+    auto flake_x = std::clamp(int(snowflake.x - snowflake.radiussize) - 1, 0, 640 - 1);
+    auto flake_y = std::clamp(int(snowflake.y - snowflake.radiussize) - 1, 0, 480 - 1);
+    auto flake_x_end = std::clamp(int(flake_x + (snowflake.radiussize * 2.5) + 2), 0, 640 - 1);
+    auto flake_y_end = std::clamp(int(flake_y + (snowflake.radiussize * 2.5) + 2), 0, 480 - 1);
+
+    for (int y = flake_y; y < flake_y_end; y++) {
+      for (int x = flake_x; x < flake_x_end; x++) {
+        int index_Y = y * src_w + x;
+        int index_U = (src_w * src_h) + (y / 2) * (src_w / 2) + x / 2;
+        int index_V = (int)((src_w * src_h) * 1.25 + (y / 2) * (src_w / 2) + x / 2);
+
+        // pointers to Y U V
+        float *pY = bg_y + (y * src_w) + x, *pU = bg_u + (y * src_w) + x, *pV = bg_v + (y * src_w) + x;
+
+        // convert 0-1 to 0-255
+        double Y = *pY * 255., U = *pU * 255., V = *pV * 255.;
+
+        // convert YUV to RGB
+        double R = 0, G = 0, B = 0;
+        yuv_to_rgb(Y, U, V, R, G, B);
+
+        // calculate pixel value of snowflake
+        auto dist = index % 3 == 0 ? get_distance_approx(double(x), double(y), snowflake.x, snowflake.y)
+                                   : get_distance(double(x), double(y), snowflake.x, snowflake.y);
+        auto color_alpha = 1. - (snowflake.expf(dist / snowflake.radiussize, 1000));
+        color_alpha *= snowflake.opacity;
+
+        // update function to blend the pixel with background
+        const auto update_snowflake_pixel = [&]() {
+          auto bg_a = 1.;
+          const auto a = color_alpha + (bg_a * (1. - color_alpha) / 1.);
+          R = 255. * ((1. * color_alpha + (R / 255.) * bg_a * (1. - color_alpha) / 1.) / a);
+          G = 255. * ((1. * color_alpha + (G / 255.) * bg_a * (1. - color_alpha) / 1.) / a);
+          B = 255. * ((1. * color_alpha + (B / 255.) * bg_a * (1. - color_alpha) / 1.) / a);
+        };
+        // draw the pixel if it was within the snowflake
+        if (dist < snowflake.radiussize) update_snowflake_pixel();
+
+        // convert RGB to YUV
+        rgb_to_yuv(R, G, B, Y, U, V);
+
+        // commit pixel (normalized to 0-1 again)
+        *pY = (Y / 255.), *pU = (U / 255.), *pV = (V / 255.);
+
+        // now process the foreground canvas as RGB (already 0-255 values)
+        yuv_to_rgb(pkt_copy.data[index_Y], pkt_copy.data[index_U], pkt_copy.data[index_V], R, G, B);
+
+        // draw only large snowflakes (> 5.5) on top of the person!
+        if (dist < snowflake.radiussize && snowflake.radiussize > 5.5) update_snowflake_pixel();
+
+        // commit pixel (normalizing not needed)
+        rgb_to_yuv(R, G, B, pkt_copy.data[index_Y], pkt_copy.data[index_U], pkt_copy.data[index_V]);
+      }
+    }
+    index++;
   }
 }
 
