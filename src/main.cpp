@@ -9,6 +9,9 @@
 #include "program.h"
 #include "snowflake.h"
 
+#include <signal.h>
+#include <stdio.h>
+
 extern double tt;  // snowflake.cpp
 
 namespace cr = CppReadline;
@@ -19,28 +22,41 @@ program::program(int argc, char **argv)
           {google_meet_full, {"models/segm_full_v679.tflite", 256, 144}},
           {google_meet_lite, {"models/segm_lite_v681.tflite", 160, 96}},
           {mlkit, {"models/selfiesegmentation_mlkit-256x256-2021_01_19-v1215.f16.tflite", 256, 256}},
-      }) {
-  cr::Console c("cam> ");
-  // c.registerCommand("set-input", std::bind(&program::set_input, this, std::placeholders::_1));
-  // c.registerCommand("set-output", std::bind(&program::set_output, this, std::placeholders::_1));
-  c.registerCommand("set-mode", std::bind(&program::set_mode, this, std::placeholders::_1));
-  c.registerCommand("set-model", std::bind(&program::set_model, this, std::placeholders::_1));
-  c.registerCommand("start", std::bind(&program::start, this, std::placeholders::_1));
-  c.registerCommand("stop", std::bind(&program::stop, this, std::placeholders::_1));
-  c.executeCommand("help");
+      }) {}
 
-  int retCode;
-  do {
-    retCode = c.readLine();
-    if (retCode == ret::Ok)
-      c.setGreeting("cam> ");
-    else
-      c.setGreeting("cam!> ");
+program::~program() {
+  stop({});
+}
 
-    if (retCode != 0) {
-      std::cout << "Received error code " << retCode << std::endl;
-    }
-  } while (retCode != ret::Quit);
+unsigned program::list_cams(const std::vector<std::string> &input) {
+  const auto usage = [=]() {
+    std::cout << "Usage: " << input[0] << "\n";
+  };
+  if (input.size() != 1) {
+    usage();
+    return 1;
+  }
+  Process process("make probe 2>&1", "", [](const char *bytes, size_t n) {
+    std::cout << "Found: " << std::string(bytes, n);
+  });
+  std::cout << "Current camera: " << camera_device << std::endl;
+  auto exit_status = process.get_exit_status();
+  std::cout << "Exit: " << exit_status << std::endl;
+  return 0;
+}
+
+unsigned program::set_cam(const std::vector<std::string> &input) {
+  const auto usage = [=]() {
+    std::cout << "Usage: " << input[0] << " < input >\n";
+    std::cout << "  e.g. " << input[0] << " /dev/video0\n";
+  };
+  if (input.size() != 2) {
+    usage();
+    return 1;
+  }
+  camera_device = input[1];
+  std::cout << "Selected camera: " << camera_device << std::endl;
+  return 0;
 }
 
 unsigned program::set_mode(const std::vector<std::string> &input) {
@@ -86,6 +102,23 @@ unsigned program::set_mode(const std::vector<std::string> &input) {
   return 0;
 }
 
+unsigned program::preview(const std::vector<std::string> &input) {
+  const auto usage = [=]() {
+    std::cout << "Usage: " << input[0] << "\n";
+  };
+  if (input.size() != 1) {
+    usage();
+    return 1;
+  }
+  std::thread background([]() {
+    Process process("ffplay /dev/video9 2>&1", "", [](const char *bytes, size_t n) {});
+    auto exit_status = process.get_exit_status();
+    std::cout << "Preview window exited: " << exit_status << std::endl;
+  });
+  background.detach();
+  return 0;
+}
+
 unsigned program::set_model(const std::vector<std::string> &input) {
   model_selected = segmentation_model::google_meet_full;
   return 0;
@@ -93,10 +126,36 @@ unsigned program::set_model(const std::vector<std::string> &input) {
 
 unsigned program::start(const std::vector<std::string> &input) {
   process_runner_ = std::thread([&]() {
-    process_.reset(new Process("make device ; make link 2>&1", "", [](const char *bytes, size_t n) {
-      // std::cout << "Output from stdout: " << std::string(bytes, n);
-    }));
-    auto exit_status = process_->get_exit_status();
+    started = true;
+    std::stringstream ss;
+    ss << "sudo modprobe -r v4l2loopback; ";
+    ss << "sudo modprobe v4l2loopback video_nr=8,9 exclusive_caps=1,1 card_label=\"Virtual YUV420P Camera\",\"Virtual "
+          "640x480 420P TFlite Camera\"; ";
+
+    // handle first part synchronously
+    Process process(ss.str(), "", [](const char *bytes, size_t n) {});
+    auto exit_status = process.get_exit_status();
+
+    ss.str("");
+    ss.clear();
+
+    //  worked for ideapad: ss << "/usr/bin/ffmpeg -i " << camera_device
+    //  check: sudo v4l2-ctl -d /dev/video0 --all
+    //  check: sudo v4l2-ctl -d /dev/video0 --list-formats-ex
+    ss << "/usr/bin/ffmpeg -pix_fmt mjpeg -i " << camera_device
+       << " -f v4l2 -input_format mjpeg -framerate 10 -video_size 1024x680 -vf "
+          "scale=640:480:force_original_aspect_ratio=increase,crop=640:480 -pix_fmt yuv420p -f v4l2 /dev/video8 2>&1";
+
+    process_.reset(new Process(
+        ss.str(),
+        "",
+        [](const char *bytes, size_t n) {
+          // std::cout << "Output from stdout: " << std::string(bytes, n);
+        },
+        nullptr,
+        true));
+
+    exit_status = process_->get_exit_status();
     std::cout << "Exit: " << exit_status << std::endl;
   });
 
@@ -148,12 +207,43 @@ unsigned program::start(const std::vector<std::string> &input) {
 
 unsigned program::stop(const std::vector<std::string> &input) {
   std::cout << "stopping..." << std::endl;
-  process_->kill();
-  if (process_runner_.joinable()) process_runner_.join();
-  std::cout << "stopping..." << std::endl;
-  stop_ = true;
-  if (runner_.joinable()) runner_.join();
+  if (started) {
+    process_->kill();
+    if (process_runner_.joinable()) process_runner_.join();
+    started = false;
+  }
+  if (!stop_) {
+    std::cout << "stopping 2..." << std::endl;
+    stop_ = true;
+    if (runner_.joinable()) runner_.join();
+  }
   return 0;
+}
+
+void program::start_console() {
+  cr::Console c("cam> ");
+
+  c.registerCommand("list-cams", std::bind(&program::list_cams, this, std::placeholders::_1));
+  c.registerCommand("set-cam", std::bind(&program::set_cam, this, std::placeholders::_1));
+  c.registerCommand("set-mode", std::bind(&program::set_mode, this, std::placeholders::_1));
+  c.registerCommand("set-model", std::bind(&program::set_model, this, std::placeholders::_1));
+  c.registerCommand("start", std::bind(&program::start, this, std::placeholders::_1));
+  c.registerCommand("stop", std::bind(&program::stop, this, std::placeholders::_1));
+  c.registerCommand("preview", std::bind(&program::preview, this, std::placeholders::_1));
+  c.executeCommand("help");
+
+  int retCode;
+  do {
+    retCode = c.readLine();
+    if (retCode == ret::Ok)
+      c.setGreeting("cam> ");
+    else
+      c.setGreeting("cam!> ");
+
+    if (retCode != 0) {
+      std::cout << "Received error code " << retCode << std::endl;
+    }
+  } while (retCode != ret::Quit);
 }
 
 int program::run() {
@@ -176,8 +266,8 @@ int program::run() {
 
   // Specify v4l2 as the input format (cannot be detected from filename /dev/videoX)
   AVInputFormat *input_format = av_find_input_format("v4l2");
-  if ((ret = avformat_open_input(&ifmt_ctx, in_filename, input_format, 0)) < 0) {
-    fprintf(stderr, "Could not open input file '%s'", in_filename);
+  if ((ret = avformat_open_input(&ifmt_ctx, in_filename.c_str(), input_format, 0)) < 0) {
+    fprintf(stderr, "Could not open input file '%s'", in_filename.c_str());
     goto end;
   }
 
@@ -187,7 +277,7 @@ int program::run() {
   }
 
   // Specify v4l2 as the output format (cannot be detected from filename /dev/videoX)
-  avformat_alloc_output_context2(&ofmt_ctx, NULL, "v4l2", out_filename);
+  avformat_alloc_output_context2(&ofmt_ctx, NULL, "v4l2", out_filename.c_str());
   if (!ofmt_ctx) {
     fprintf(stderr, "Could not create output context\n");
     ret = AVERROR_UNKNOWN;
@@ -245,12 +335,12 @@ int program::run() {
     // out_stream->codecpar->width = 640;
     // out_stream->codecpar->height = 480;
   }
-  av_dump_format(ofmt_ctx, 0, out_filename, 1);
+  av_dump_format(ofmt_ctx, 0, out_filename.c_str(), 1);
 
   if (!(ofmt->flags & AVFMT_NOFILE)) {
-    ret = avio_open(&ofmt_ctx->pb, out_filename, AVIO_FLAG_WRITE);
+    ret = avio_open(&ofmt_ctx->pb, out_filename.c_str(), AVIO_FLAG_WRITE);
     if (ret < 0) {
-      fprintf(stderr, "Could not open output file '%s'", out_filename);
+      fprintf(stderr, "Could not open output file '%s'", out_filename.c_str());
       goto end;
     }
   }
@@ -307,7 +397,7 @@ int program::run() {
     av_packet_unref(&pkt_copy);
 
     // TODO: make optional, chromium doesn't seem to handle too many frames very well..
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    // std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
 
   av_write_trailer(ofmt_ctx);
@@ -674,7 +764,20 @@ void program::draw_snowflakes(AVPacket &pkt_copy) {
   }
 }
 
+// workaround for signal();
+program *global_program = nullptr;
+
 int main(int argc, char **argv) {
   program prog(argc, argv);
-  prog.run();
+  global_program = &prog;
+
+  signal(SIGINT, [](int a) {
+    printf("^C caught\n");
+    if (global_program != nullptr) {
+      global_program->stop({});
+      std::exit(0);
+    }
+  });
+
+  prog.start_console();
 }

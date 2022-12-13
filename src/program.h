@@ -47,7 +47,9 @@ private:
   std::unique_ptr<tflite::ops::builtin::BuiltinOpResolver> resolver;
   std::unique_ptr<tflite::InterpreterBuilder> builder;
 
-  float sigma_bg_blur = 4.;
+  // float sigma_bg_blur = 4.;
+  // float sigma_bg_blur = 8.;
+  float sigma_bg_blur = 6.;
   float sigma_segmask = 1.2;
   int src_w = 640;
   int src_h = 480;
@@ -57,8 +59,9 @@ private:
   segmentation_model model_selected = segmentation_model::google_meet_full;
   model_meta_info model;
   // TODO: make these strings, and configurable.
-  const char *in_filename = "/dev/video8";
-  const char *out_filename = "/dev/video9";
+  std::string camera_device = "/dev/video0";
+  std::string in_filename = "/dev/video8";
+  std::string out_filename = "/dev/video9";
   bool animate = true;
 
   std::unique_ptr<tflite::Interpreter> interpreter;
@@ -74,15 +77,21 @@ private:
   float *mask_out_2 = nullptr;
 
   uint8_t *vbg = nullptr;
+  bool started = false;
 
 public:
   program(int argc, char **argv);
+  ~program();
 
+  void start_console();
   int run();
+  unsigned list_cams(const std::vector<std::string> &input);
+  unsigned set_cam(const std::vector<std::string> &input);
   unsigned set_mode(const std::vector<std::string> &input);
   unsigned set_model(const std::vector<std::string> &input);
   unsigned start(const std::vector<std::string> &input);
   unsigned stop(const std::vector<std::string> &input);
+  unsigned preview(const std::vector<std::string> &input);
 
   void load_tensorflow_model();
   void reset();

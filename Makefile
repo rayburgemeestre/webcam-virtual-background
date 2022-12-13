@@ -5,11 +5,17 @@ help:
 	@grep -E '^[0-9a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 configure:  ## configure ffmpeg, tensorflow and mediapipe dependencies
+	make bazel
 	make ffmpeg
 	make tf
 	make mediapipe
 	make cpp-readline
 	make tpl
+
+bazel:
+	sudo apt install npm
+	sudo python3 -m pip install numpy
+	sudo npm install -g @bazel/bazelisk
 
 ffmpeg:
 	mkdir -p build
@@ -79,7 +85,11 @@ device:  ## setup two devices /dev/video8 and /dev/video9
 	sudo modprobe v4l2loopback video_nr=7,8,9 exclusive_caps=1,1,1 card_label="Dummy Camera","Virtual YUV420P Camera","Virtual 640x480 420P TFlite Camera"
 
 link:  ## link /dev/video0 to /dev/video8 with 30fps, YUV420p pixel format and 640x480 resolution
-	ffmpeg -nostdin -i /dev/video0 -f v4l2 -input_format mjpeg -framerate 10 -video_size 1024x680 -vf scale=640:480:force_original_aspect_ratio=increase,crop=640:480 -pix_fmt yuv420p -f v4l2 /dev/video8
+	@if [[ "$(DEVICE)" ]]; then echo setting; export SELECTED_DEVICE=$(DEVICE); else export SELECTED_DEVICE=/dev/video0; fi; \
+	ffmpeg -nostdin -i $$SELECTED_DEVICE -f v4l2 -input_format mjpeg -framerate 10 -video_size 1024x680 -vf scale=640:480:force_original_aspect_ratio=increase,crop=640:480 -pix_fmt yuv420p -f v4l2 /dev/video8
+
+probe:  ## probe devices
+	@for file in /dev/video{0,1,2,3,4,5,6,7}; do tmp="$$(timeout 1s ffprobe $$file -show_entries format |& grep Stream)"; if [[ "$$tmp" =~ Video ]]; then echo "$$file - $$tmp"; fi; done
 
 env:
 	echo LD_LIBRARY_PATH=$$LD_LIBRARY_PATH:$$PWD/ffmpeg/lib:$$PWD/build/tensorflow/bazel-bin/tensorflow/lite
@@ -102,11 +112,21 @@ clean:  ## clean project
 	# rm -rf ~/.cache/bazel
 
 format:
-	clang-format -i src/*
+	clang-format-12 -i src/*
 
-export:
+export:  ## create files in the lib dir
 	mkdir -p $$PWD/lib
 	LD_LIBRARY_PATH=$$LD_LIBRARY_PATH:$$PWD/ffmpeg/lib:$$PWD/build/tensorflow/bazel-bin/tensorflow/lite \
 	ldd main | grep $$PWD | awk '{ print $$3 }' | xargs -n 1 -I{} rsync -raPv --copy-links {} $$PWD/lib/
 
-
+release:
+	rm -rf release
+	mkdir -p release
+	cp -prv lib release/
+	cp -prv main release/
+	cp -prv models release/
+	cp -prv backgrounds release/
+	cp -prv Makefile release/
+	rm -vrf release/backgrounds/spaceship.tar.gz
+	ls -al release
+	cd release && ldd main
