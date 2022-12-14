@@ -45,6 +45,7 @@ cat << EOF > cam
 # recreate virtual devices
 sudo modprobe -r v4l2loopback;
 sudo modprobe v4l2loopback video_nr=8,9 exclusive_caps=0,1 card_label="Virtual Temp Camera Input","Virtual 640x480 420P TFlite Camera";
+xhost +
 # the rest runs inside docker.
 docker run --privileged -it -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix docker.io/rayburgemeestre/virtual-bg:1.0
 EOF
@@ -54,6 +55,7 @@ sudo cp -prv cam /usr/local/bin/  # optionally
 
 * If you don't like the `--privileged` flag, you can also discard it and use `--device /dev/video0 --device /dev/video8 --device /dev/video9` (or whatever devices are appropriate in your case).
 * The `-e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix` flags are also optional, and only needed if you wish to use the `preview` command, to show a window of the virtual camera output.
+* The `xhost +` is also needed only for the `preview` command, to allow the container to access the X11 server.
 * The `exclusive_caps=0,1` parameter for the virtual devices is important: the `1` makes it available for chrome to use. We don't set the "Virtual Temp Camera Input" device to `1` as it's just an intermediate device to be used by this project only.
 
 ## Deploy from binaries
