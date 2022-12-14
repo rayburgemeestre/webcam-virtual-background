@@ -129,8 +129,8 @@ unsigned program::start(const std::vector<std::string> &input) {
     started = true;
     std::stringstream ss;
     ss << "sudo modprobe -r v4l2loopback; ";
-    ss << "sudo modprobe v4l2loopback video_nr=8,9 exclusive_caps=1,1 card_label=\"Virtual YUV420P Camera\",\"Virtual "
-          "640x480 420P TFlite Camera\"; ";
+    ss << "sudo modprobe v4l2loopback video_nr=8,9 exclusive_caps=0,1 card_label=\"Virtual Temp Camera "
+          "Input\",\"Virtual 640x480 420P TFlite Camera\"; ";
 
     // handle first part synchronously
     Process process(ss.str(), "", [](const char *bytes, size_t n) {});
@@ -768,6 +768,35 @@ void program::draw_snowflakes(AVPacket &pkt_copy) {
 program *global_program = nullptr;
 
 int main(int argc, char **argv) {
+  std::cout << R"(
+Art by Marcin Glinski           _
+                               / \
+                              / .'_
+                             / __| \
+             `.             | / (-' |
+           `.  \_..._       :  (_,-/
+         `-. `,'     `-.   /`-.__,'
+            `/ __       \ /     /
+            /`/  \       :'    /
+          _,\o\_o/       /    /
+         (_) ___.--.    /    /
+          `-. -._.i \.      :
+             `.\  ( |:.     |
+            ,' )`-' |:..   / \
+   __     ,'   |    `.:.      `.
+  (_ `---:     )      \:.       \
+   ,'     `. .'\       \:.       )
+ ,' ,'     ,'  \\ o    |:.      /
+(_,'  ,7  /     \`.__.':..     /,,,
+  (_,'(_,'   _gdMbp,,dp,,,,,,dMMMMMbp,,
+          ,dMMMMMMMMMMMMMMMMMMMMMMMMMMMb,
+       .dMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMb,  fsc
+     .dMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM,
+    ,MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
+   dMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM.
+ .dMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMb
+ V I R T U A L    B A C K G R O U N D   W E B C A M
+)" << std::endl;  // source: https://www.asciiart.eu/cartoons/other
   program prog(argc, argv);
   global_program = &prog;
 
