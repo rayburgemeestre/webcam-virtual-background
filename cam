@@ -1,0 +1,6 @@
+#!/bin/bash
+
+sudo modprobe -r v4l2loopback;
+sudo modprobe v4l2loopback video_nr=8,9 exclusive_caps=0,1 card_label="Virtual Temp Camera Input","Virtual 640x480 420P TFlite Camera";
+
+./main

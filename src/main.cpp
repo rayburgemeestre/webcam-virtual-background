@@ -127,21 +127,25 @@ unsigned program::set_model(const std::vector<std::string> &input) {
 unsigned program::start(const std::vector<std::string> &input) {
   process_runner_ = std::thread([&]() {
     started = true;
-    std::stringstream ss;
-    ss << "sudo modprobe -r v4l2loopback; ";
-    ss << "sudo modprobe v4l2loopback video_nr=8,9 exclusive_caps=0,1 card_label=\"Virtual Temp Camera "
-          "Input\",\"Virtual 640x480 420P TFlite Camera\"; ";
+    // we will now assume these loopback devices are already present
+    // handled via wrapper-script, since `sudo` might prompt for user interaction
+    // this shell is not compatible with that right now..
+    //  std::stringstream ss;
+    //  ss << "sudo modprobe -r v4l2loopback; ";
+    //  ss << "sudo modprobe v4l2loopback video_nr=8,9 exclusive_caps=0,1 card_label=\"Virtual Temp Camera "
+    //        "Input\",\"Virtual 640x480 420P TFlite Camera\"; ";
 
-    // handle first part synchronously
-    Process process(ss.str(), "", [](const char *bytes, size_t n) {});
-    auto exit_status = process.get_exit_status();
+    // // handle first part synchronously
+    // Process process(ss.str(), "", [](const char *bytes, size_t n) {});
+    // auto exit_status = process.get_exit_status();
 
-    ss.str("");
-    ss.clear();
+    // ss.str("");
+    // ss.clear();
 
     //  worked for ideapad: ss << "/usr/bin/ffmpeg -i " << camera_device
     //  check: sudo v4l2-ctl -d /dev/video0 --all
     //  check: sudo v4l2-ctl -d /dev/video0 --list-formats-ex
+    std::stringstream ss;
     ss << "/usr/bin/ffmpeg -pix_fmt mjpeg -i " << camera_device
        << " -f v4l2 -input_format mjpeg -framerate 10 -video_size 1024x680 -vf "
           "scale=640:480:force_original_aspect_ratio=increase,crop=640:480 -pix_fmt yuv420p -f v4l2 /dev/video8 2>&1";
@@ -155,7 +159,7 @@ unsigned program::start(const std::vector<std::string> &input) {
         nullptr,
         true));
 
-    exit_status = process_->get_exit_status();
+    auto exit_status = process_->get_exit_status();
     std::cout << "Exit: " << exit_status << std::endl;
   });
 
@@ -190,7 +194,6 @@ unsigned program::start(const std::vector<std::string> &input) {
     std::stringstream ss;
     for (size_t i = 0; i < 750; i++) {
       ss << "backgrounds/spaceship/" << i << ".ayuv";
-      std::cout << "loading: " << ss.str() << std::endl;
       load(anim_bg[i], ss.str());
       ss.str("");
       ss.clear();

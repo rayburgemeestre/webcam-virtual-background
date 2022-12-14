@@ -123,13 +123,14 @@ release:  ## create 'release' dir with all the binaries precompiled
 	rm -rf release
 	mkdir -p release
 	cp -prv lib release/
-	cp -prv main release/cam
+	cp -prv main release/
+	cp -prv cam release/
 	cp -prv models release/
 	cp -prv backgrounds release/
 	cp -prv Makefile release/
 	rm -vrf release/backgrounds/spaceship.tar.gz
 	ls -al release
-	cd release && ldd cam
+	cd release && ldd main
 
 docker:
 	docker build -t rayburgemeestre/virtual-bg:1.0 .

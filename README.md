@@ -70,7 +70,6 @@ This should work at least on Ubuntu 20.04 and 22.04:
     cd release
     ./cam
 
-
 ## Compiling from source
 
 Check `make`:
