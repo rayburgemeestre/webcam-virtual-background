@@ -119,14 +119,21 @@ export:  ## create files in the lib dir
 	LD_LIBRARY_PATH=$$LD_LIBRARY_PATH:$$PWD/ffmpeg/lib:$$PWD/build/tensorflow/bazel-bin/tensorflow/lite \
 	ldd main | grep $$PWD | awk '{ print $$3 }' | xargs -n 1 -I{} rsync -raPv --copy-links {} $$PWD/lib/
 
-release:
+release:  ## create 'release' dir with all the binaries precompiled
 	rm -rf release
 	mkdir -p release
 	cp -prv lib release/
-	cp -prv main release/
+	cp -prv main release/cam
 	cp -prv models release/
 	cp -prv backgrounds release/
 	cp -prv Makefile release/
 	rm -vrf release/backgrounds/spaceship.tar.gz
 	ls -al release
-	cd release && ldd main
+	cd release && ldd cam
+
+docker:
+	docker build -t rayburgemeestre/virtual-bg:1.0 .
+	docker tag rayburgemeestre/virtual-bg:1.0 docker.io/rayburgemeestre/virtual-bg:1.0
+
+push:
+	docker push docker.io/rayburgemeestre/virtual-bg:1.0
