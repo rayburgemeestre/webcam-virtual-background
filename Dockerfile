@@ -10,6 +10,6 @@ RUN apt-get update && \
     apt-get autoremove && \
     rm -rf /var/lib/apt/lists/*
 
-COPY release /release
+COPY virtual-bg-1.0 /release
 
 ENTRYPOINT ["/bin/sh", "-c", "cd /release; ./main"]

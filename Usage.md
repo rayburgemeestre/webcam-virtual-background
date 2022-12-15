@@ -1,4 +1,4 @@
-## Usage in more detail
+## Usage step-by-step
 
 It can take any `/dev/videoX` device, resizes it to 640x480 (currently hard-coded), convert it to YUV420p, feed that to
 a virtual device `/dev/video8`. Then this project's C++ code with tensorflow lite will read that device, do all the
@@ -11,7 +11,7 @@ to the program:
 
     rayb@ideapad:~> cam
 
-    Art by Marcin Glinski           _
+    art by: Marcin Glinski          _
                                    / \
                                   / .'_
                                  / __| \

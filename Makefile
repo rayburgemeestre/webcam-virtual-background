@@ -4,7 +4,7 @@ SHELL:=/bin/bash
 help:
 	@grep -E '^[0-9a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-configure:  ## configure ffmpeg, tensorflow and mediapipe dependencies
+configure:  ## configure ffmpeg, tensorflow, mediapipe and other dependencies
 	make bazel
 	make ffmpeg
 	make tf
@@ -94,18 +94,6 @@ probe:  ## probe devices
 env:
 	echo LD_LIBRARY_PATH=$$LD_LIBRARY_PATH:$$PWD/ffmpeg/lib:$$PWD/build/tensorflow/bazel-bin/tensorflow/lite
 
-run:  ## run project
-	LD_LIBRARY_PATH=$$LD_LIBRARY_PATH:$$PWD/ffmpeg/lib:$$PWD/build/tensorflow/bazel-bin/tensorflow/lite \
-		./main /dev/video8 /dev/video9 2 1
-
-run2:  ## run project
-	LD_LIBRARY_PATH=$$LD_LIBRARY_PATH:$$PWD/ffmpeg/lib:$$PWD/build/tensorflow/bazel-bin/tensorflow/lite \
-		./main /dev/video8 /dev/video9 2 1
-
-debug:  ## run project in debug
-	LD_LIBRARY_PATH=$$LD_LIBRARY_PATH:$$PWD/ffmpeg/lib:$$PWD/build/tensorflow/bazel-bin/tensorflow/lite \
-		gdb --args ./main /dev/video2 /dev/video9 3 1
-
 clean:  ## clean project
 	rm -rf build
 	rm -rf ffmpeg
@@ -119,8 +107,11 @@ export:  ## create files in the lib dir
 	LD_LIBRARY_PATH=$$LD_LIBRARY_PATH:$$PWD/ffmpeg/lib:$$PWD/build/tensorflow/bazel-bin/tensorflow/lite \
 	ldd main | grep $$PWD | awk '{ print $$3 }' | xargs -n 1 -I{} rsync -raPv --copy-links {} $$PWD/lib/
 
+.PHONY: release
 release:  ## create 'release' dir with all the binaries precompiled
+	make compile
 	rm -rf release
+	rm -rf virtual-bg-1.0
 	mkdir -p release
 	cp -prv lib release/
 	cp -prv main release/
@@ -131,10 +122,15 @@ release:  ## create 'release' dir with all the binaries precompiled
 	rm -vrf release/backgrounds/spaceship.tar.gz
 	ls -al release
 	cd release && ldd main
+	mv release virtual-bg-1.0
+	rm -rf virtual-bg-1.0.tar.gz
+	tar -czf virtual-bg-1.0.tar.gz virtual-bg-1.0
+	echo "upload virtual-bg-1.0.tar.gz to the correct tag on github.com"
+	echo "then proceed with make docker && make push"
 
-docker:
+docker:  ## build docker image
 	docker build -t rayburgemeestre/virtual-bg:1.0 .
 	docker tag rayburgemeestre/virtual-bg:1.0 docker.io/rayburgemeestre/virtual-bg:1.0
 
-push:
+push:  ## push docker image to docker hub
 	docker push docker.io/rayburgemeestre/virtual-bg:1.0

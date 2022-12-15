@@ -93,6 +93,8 @@ public:
   unsigned stop(const std::vector<std::string> &input);
   unsigned preview(const std::vector<std::string> &input);
 
+  int load(std::vector<uint8_t> &bg, const std::string &bg_file);
+  void load_spaceship_frames_into_memory(bool force = false);
   void load_tensorflow_model();
   void reset();
   void process_frame(AVPacket &pkt_copy);

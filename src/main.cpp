@@ -89,6 +89,7 @@ unsigned program::set_mode(const std::vector<std::string> &input) {
   } else if (input[1] == "virtual") {
     mode = segmentation_mode::virtual_background;
   } else if (input[1] == "animated") {
+    load_spaceship_frames_into_memory(true);
     mode = segmentation_mode::virtual_background;
     animate = true;
   } else if (input[1] == "snowflakes") {
@@ -171,34 +172,9 @@ unsigned program::start(const std::vector<std::string> &input) {
   model = models[model_selected];
 
   // Load a background to test
-  auto load = [](std::vector<uint8_t> &bg, const std::string &bg_file) {
-    std::ifstream file(bg_file, std::ios::binary | std::ios::ate);
-    if (!file.good()) {
-      return 1;
-    }
-    std::streamsize size = file.tellg();
-    if (size == std::streamsize(0)) {
-      return 1;
-    }
-    file.seekg(0, std::ios::beg);
-    bg.reserve(size);
-    if (!file.read((char *)bg.data(), size)) {
-      return 1;
-    }
-    return 0;
-  };
   load(bg, bg_file);
 
-  if (animate) {
-    anim_bg.reserve(750);
-    std::stringstream ss;
-    for (size_t i = 0; i < 750; i++) {
-      ss << "backgrounds/spaceship/" << i << ".ayuv";
-      load(anim_bg[i], ss.str());
-      ss.str("");
-      ss.clear();
-    }
-  }
+  load_spaceship_frames_into_memory();
 
   runner_ = std::thread([&]() {
     stop_ = false;
@@ -767,12 +743,43 @@ void program::draw_snowflakes(AVPacket &pkt_copy) {
   }
 }
 
+int program::load(std::vector<uint8_t> &bg, const std::string &bg_file) {
+  std::ifstream file(bg_file, std::ios::binary | std::ios::ate);
+  if (!file.good()) {
+    return 1;
+  }
+  std::streamsize size = file.tellg();
+  if (size == std::streamsize(0)) {
+    return 1;
+  }
+  file.seekg(0, std::ios::beg);
+  bg.reserve(size);
+  if (!file.read((char *)bg.data(), size)) {
+    return 1;
+  }
+  return 0;
+};
+
+void program::load_spaceship_frames_into_memory(bool force) {
+  if ((animate || force) && anim_bg.empty()) {
+    anim_bg.reserve(750);
+    std::stringstream ss;
+    for (size_t i = 0; i < 750; i++) {
+      ss << "backgrounds/spaceship/" << i << ".ayuv";
+      load(anim_bg[i], ss.str());
+      ss.str("");
+      ss.clear();
+    }
+    std::cout << "pre-loaded spaceship background frames into memory." << std::endl;
+  }
+}
+
 // workaround for signal();
 program *global_program = nullptr;
 
 int main(int argc, char **argv) {
   std::cout << R"(
-Art by Marcin Glinski           _
+art by: Marcin Glinski          _
                                / \
                               / .'_
                              / __| \
