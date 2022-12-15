@@ -2,7 +2,7 @@
 
 # Linux Virtual Background Webcam
 
-This project is not very polished, as it was originally a sandbox just for
+This project is not fully polished, as it was originally a sandbox just for
 myself. I created this about a year ago, but there doesn't really seem to be
 any Linux software that provides background blurring in an easy-to-use fashion,
 so hopefully this project can fulfill that niche. Pull Requests are welcome.
@@ -13,6 +13,8 @@ following live demo: https://volcomix.github.io/virtual-background/. It is a
 typescript project, but I took a lot of inspiration from his code when
 implementing this project. This project also uses Tensorflow Lite with the same
 ML models, and ffmpeg for dealing with the camera devices.
+
+This is the hackernews post for it: https://news.ycombinator.com/item?id=34006745
 
 ## Features
 
