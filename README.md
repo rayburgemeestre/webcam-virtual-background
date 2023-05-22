@@ -28,15 +28,15 @@ in front of the subject.
 
 ## Quick start
 
-* Deploy using "Deploy using Docker", or "Deploy from binaries".
-* Run the program, follow usage instructions below. Typically:
-    ```
-    rayb@ideapad ~> cam
-    cam> set-device /dev/video4  # (if /dev/video4 is your external camera to use)
-    cam> set-mode snowflakes     # (animated is the default, the spaceship background)
-    cam> start
-    ```
-* Use the virtual webcam labeled `Virtual 640x480 420P TFlite Camera` in your
+- Deploy using "Deploy using Docker", or "Deploy from binaries".
+- Run the program, follow usage instructions below. Typically:
+  ```
+  rayb@ideapad ~> cam
+  cam> set-device /dev/video4  # (if /dev/video4 is your external camera to use)
+  cam> set-mode snowflakes     # (animated is the default, the spaceship background)
+  cam> start
+  ```
+- Use the virtual webcam labeled `Virtual 640x480 420P TFlite Camera` in your
   video conferencing software.
 
 For detailed usage, see: [Usage.md](Usage.md).
@@ -70,18 +70,26 @@ chmod +x cam
 sudo cp -prv cam /usr/local/bin/  # optionally
 ```
 
+If you want to use an external image as a background, you can mount the desired path into the Docker image. For example:
+
+```bash
+docker run --privileged -it -e DISPLAY=\$DISPLAY -v /home/user/pictures:/release/pictures -v /tmp/.X11-unix:/tmp/.X11-unix docker.io/rayburgemeestre/virtual-bg:1.0
+```
+
+Afterward, select the corresponding image by using the command: `set-mode external pictures/<your-image>.png `
+
 ### Remarks on above script
 
-* If you don't like the `--privileged` flag, you can also discard it and use
+- If you don't like the `--privileged` flag, you can also discard it and use
   `--device /dev/video0 --device /dev/video8 --device /dev/video9` (or whatever
   devices are appropriate in your case).
-* The `-e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix` flags are also
+- The `-e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix` flags are also
   optional, and only needed if you wish to use the `preview` command, to show a
   window of the virtual camera output.
-* The `xhost +` is also needed only for the `preview` command, to allow the
+- The `xhost +` is also needed only for the `preview` command, to allow the
   container to access the X11 server.
-* The `exclusive_caps=0,1` parameter for the virtual devices is important: the
-  `1` makes it available for chrome to use.  We don't set the "Virtual Temp
+- The `exclusive_caps=0,1` parameter for the virtual devices is important: the
+  `1` makes it available for chrome to use. We don't set the "Virtual Temp
   Camera Input" device to `1` as it's just an intermediate device to be used by
   this project only.
 
@@ -116,7 +124,7 @@ also work on other distros) should be done as follows.
 
 This is by far the most time consuming step, and likely the most error prone.
 It downloads and compiles a lot of dependencies. If you don't want to do this,
-you can skip this step and try the libraries committed to git in `lib`.  These
+you can skip this step and try the libraries committed to git in `lib`. These
 were compiled on Ubuntu 20.04 by me, and were only 24 MiB anyway.
 
 Then, download https://cppse.nl/spaceship.tar.gz and extract it in the
@@ -140,21 +148,21 @@ https://github.com/Volcomix/virtual-background
 
 Background segregation stuff code that helped me with TFlite
 
-* https://github.com/floe/backscrub/issues/28#issuecomment-771445099
-* https://github.com/floe/backscrub/blob/master/deepseg.cc#L252-L258
+- https://github.com/floe/backscrub/issues/28#issuecomment-771445099
+- https://github.com/floe/backscrub/blob/master/deepseg.cc#L252-L258
 
 Shout out to:
 
-* https://github.com/spacejake/tflite-cpp - for showing how to use TFlite
-* https://gist.github.com/bfraboni/946d9456b15cac3170514307cf032a27 - for the blur code
-* https://www.youtube.com/watch?v=1kDQggH30Lg - free virtual background
+- https://github.com/spacejake/tflite-cpp - for showing how to use TFlite
+- https://gist.github.com/bfraboni/946d9456b15cac3170514307cf032a27 - for the blur code
+- https://www.youtube.com/watch?v=1kDQggH30Lg - free virtual background
 
 ## Some design decisions
 
-* Reason for the resizing is larger resolutions were a bit heavy on the CPU, at
+- Reason for the resizing is larger resolutions were a bit heavy on the CPU, at
   least on the laptop I was using at the time. Code optimizations code improve
   this.
-* Reason for the YUV420p conversion is that I could make the code simpler, I
+- Reason for the YUV420p conversion is that I could make the code simpler, I
   did spend many days at the time to use a higher level ffmpeg API to achieve
   support for all ffmpeg supported pixel formats. The point would be that
   different webcams could be hooked up directly, and potentially we don't need
