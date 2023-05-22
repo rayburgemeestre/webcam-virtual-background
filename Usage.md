@@ -87,6 +87,7 @@ Then w/r/t the effect to apply, for this the `set-mode` command is used and can 
     - animated
     - snowflakes
     - snowflakesblur
+    - external <image_path>
     Received error code 1
     cam!>
 
