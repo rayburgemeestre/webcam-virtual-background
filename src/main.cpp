@@ -1,8 +1,9 @@
 #include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <stdexcept>
 #include <string>
-
 #include "Console.hpp"
 #include "ffmpeg_headers.hpp"
 #include "math.hpp"
@@ -71,10 +72,13 @@ unsigned program::set_mode(const std::vector<std::string> &input) {
     std::cout << "- animated\n";
     std::cout << "- snowflakes" << std::endl;
     std::cout << "- snowflakesblur" << std::endl;
+    std::cout << "- external <image_path>" << std::endl;
   };
-  if (input.size() != 2) {
-    usage();
-    return 1;
+  if (input.size() > 1 && input[1] != "external" || input.size() < 2) {
+    if (input.size() != 2) {
+      usage();
+      return 1;
+    }
   }
 
   animate = false;
@@ -96,6 +100,8 @@ unsigned program::set_mode(const std::vector<std::string> &input) {
     mode = segmentation_mode::snowflakes;
   } else if (input[1] == "snowflakesblur") {
     mode = segmentation_mode::snowflakes_blur;
+  } else if (input[1] == "external") {
+    return set_background(input);
   } else {
     usage();
     return 1;
@@ -134,13 +140,13 @@ unsigned program::start(const std::vector<std::string> &input) {
     //  std::stringstream ss;
     //  ss << "sudo modprobe -r v4l2loopback; ";
     //  ss << "sudo modprobe v4l2loopback video_nr=8,9 exclusive_caps=0,1 card_label=\"Virtual Temp Camera "
-    //        "Input\",\"Virtual 640x480 420P TFlite Camera\"; ";
+    //        "Input\",\"Virtual 640x480 420P TFlite Camera\"; "e
 
     // // handle first part synchronously
     // Process process(ss.str(), "", [](const char *bytes, size_t n) {});
-    // auto exit_status = process.get_exit_status();
+    // auto exit_status = process.get_exit_status();:
 
-    // ss.str("");
+    // ss.str("");e
     // ss.clear();
 
     //  worked for ideapad: ss << "/usr/bin/ffmpeg -i " << camera_device
@@ -172,7 +178,10 @@ unsigned program::start(const std::vector<std::string> &input) {
   model = models[model_selected];
 
   // Load a background to test
-  load(bg, bg_file);
+  // TODO: Implement loading the file path from a configuration file to increase the flexibility of the program
+  if (mode != segmentation_mode::external_background) {
+    load(bg, bg_file);
+  }
 
   load_spaceship_frames_into_memory();
 
@@ -196,6 +205,48 @@ unsigned program::stop(const std::vector<std::string> &input) {
     stop_ = true;
     if (runner_.joinable()) runner_.join();
   }
+  return 0;
+}
+
+unsigned program::set_background(const std::vector<std::string> &input) {
+  bg.clear();
+  animate = false;
+  if (input.size() != 3) {
+    std::cout << "Usage: set-mode external <image_file_path>" << std::endl;
+    return 1;
+  }
+
+  std::string background_file_path = input[2];
+  std::filesystem::path filePath(background_file_path);
+  std::string extension = filePath.extension().string();
+
+  std::set<std::string> supportedImageFormats = {".png", ".jpeg", ".jpg"};
+  if (extension == ".ayuv") {
+    if (int errorcode = load(bg, input[2]) != 0) {
+      return errorcode;
+    }
+  } else if (supportedImageFormats.find(extension) != supportedImageFormats.end()) {
+    // Handle image file
+    std::ifstream file(background_file_path);
+    if (!file.good()) {
+      std::cerr << "Error opening file: " << background_file_path << std::endl;
+      return 1;
+    }
+
+    // Process image file using processImage function
+    try {
+      std::vector<uint8_t> imageData = processImage(background_file_path);
+      convertRGBtoAYUV(imageData, bg);
+    } catch (const std::exception &e) {
+      std::cerr << "Error processing image file: " << e.what() << std::endl;
+      return 1;
+    }
+  } else {
+    std::cerr << "Unsupported image format. The supported image formats are: .png, .jpeg, .jpg, and .ayuv."
+              << std::endl;
+    return 1;
+  }
+  mode = segmentation_mode::external_background;
   return 0;
 }
 
@@ -429,7 +480,7 @@ void program::reset() {
 }
 
 void program::process_frame(AVPacket &pkt_copy) {
-  std::vector<float> pixels;
+  // std::vector<float> pixels;
 
   // Fill input tensor with RGB values
   fill_input_tensor(pkt_copy);
@@ -496,9 +547,9 @@ void program::process_frame(AVPacket &pkt_copy) {
           pkt_copy.data[index_V] = (pkt_copy.data[index_V] * mask_alpha_ratio) + float(*vbg++ * bg_alpha_ratio);
           break;
         case snowflakes: {
-          pkt_copy.data[index_Y] = (pkt_copy.data[index_Y] * mask_alpha_ratio) + float(255 * *bg_y++ * bg_alpha_ratio);
-          pkt_copy.data[index_U] = (pkt_copy.data[index_U] * mask_alpha_ratio) + float(255 * *bg_u++ * bg_alpha_ratio);
-          pkt_copy.data[index_V] = (pkt_copy.data[index_V] * mask_alpha_ratio) + float(255 * *bg_v++ * bg_alpha_ratio);
+          pkt_copy.data[index_Y] = (pkt_copy.data[index_Y] * mask_alpha_ratio) + float(*bg_y++ * bg_alpha_ratio);
+          pkt_copy.data[index_U] = (pkt_copy.data[index_U] * mask_alpha_ratio) + float(*bg_u++ * bg_alpha_ratio);
+          pkt_copy.data[index_V] = (pkt_copy.data[index_V] * mask_alpha_ratio) + float(*bg_v++ * bg_alpha_ratio);
           break;
         }
         case snowflakes_blur: {
@@ -507,6 +558,13 @@ void program::process_frame(AVPacket &pkt_copy) {
           pkt_copy.data[index_V] = (pkt_copy.data[index_V] * mask_alpha_ratio) + float(255 * *bg_v++ * bg_alpha_ratio);
           break;
         }
+        case external_background: {
+          vbg++;  // skip alpha channel
+          pkt_copy.data[index_Y] = (pkt_copy.data[index_Y] * mask_alpha_ratio) + float(*vbg++ * bg_alpha_ratio);
+          pkt_copy.data[index_U] = (pkt_copy.data[index_U] * mask_alpha_ratio) + float(*vbg++ * bg_alpha_ratio);
+          pkt_copy.data[index_V] = (pkt_copy.data[index_V] * mask_alpha_ratio) + float(*vbg++ * bg_alpha_ratio);
+          break;
+         }
       }
     }
   }
@@ -621,28 +679,37 @@ void program::upscale_segregation_mask(const AVPacket &pkt_copy) {
 
 void program::fill_input_tensor(const AVPacket &pkt_copy) {
   auto *input = interpreter->typed_tensor<float>(0);
+  const float inv_width = 1.0f / model.width;
+  const float inv_height = 1.0f / model.height;
+
+  const float kRedCoeff = 1.402f;
+  const float kGreenCoeff1 = 0.344f;
+  const float kGreenCoeff2 = 0.714f;
+  const float kBlueCoeff = 1.772f;
+
   for (int y = 0; y < model.height; y++) {
-    const float ratio_1 = y / float(model.height);
+    const int src_y = static_cast<int>(y * inv_height * src_h);
+    const int src_y_div_2 = src_y / 2;
+
     for (int x = 0; x < model.width; x++) {
-      const float ratio_2 = x / float(model.width);
-      int src_y = ratio_1 * src_h;
-      int src_x = ratio_2 * src_w;
+      const int src_x = static_cast<int>(x * inv_width * src_w);
+      const int src_x_div_2 = src_x / 2;
 
-      int index_Y = src_y * src_w + src_x;
-      int index_U = ((src_w * src_h) + (src_y / 2) * (src_w / 2) + src_x / 2);
-      int index_V = (int)((src_w * src_h) * 1.25 + (src_y / 2) * (src_w / 2) + src_x / 2);
+      const int index_Y = src_y * src_w + src_x;
+      const int index_U = (src_w * src_h) + (src_y_div_2) * (src_w / 2) + src_x_div_2;
+      const int index_V = static_cast<int>((src_w * src_h) * 1.25 + (src_y_div_2) * (src_w / 2) + src_x_div_2);
 
-      int Y = pkt_copy.data[index_Y];
-      int U = pkt_copy.data[index_U];
-      int V = pkt_copy.data[index_V];
+      const int Y = pkt_copy.data[index_Y];
+      const int U = pkt_copy.data[index_U];
+      const int V = pkt_copy.data[index_V];
 
-      int R = (int)(Y + 1.402f * (V - 128));
-      int G = (int)(Y - 0.344f * (U - 128) - 0.714f * (V - 128));
-      int B = (int)(Y + 1.772f * (U - 128));
+      const int R = Y + static_cast<int>(kRedCoeff * (V - 128));
+      const int G = Y - static_cast<int>(kGreenCoeff1 * (U - 128) + kGreenCoeff2 * (V - 128));
+      const int B = Y + static_cast<int>(kBlueCoeff * (U - 128));
 
-      *input++ = float(R / 255.0);
-      *input++ = float(G / 255.0);
-      *input++ = float(B / 255.0);
+      *input++ = static_cast<float>(R) / 255.0f;
+      *input++ = static_cast<float>(G) / 255.0f;
+      *input++ = static_cast<float>(B) / 255.0f;
     }
   }
 }
@@ -746,19 +813,160 @@ void program::draw_snowflakes(AVPacket &pkt_copy) {
 int program::load(std::vector<uint8_t> &bg, const std::string &bg_file) {
   std::ifstream file(bg_file, std::ios::binary | std::ios::ate);
   if (!file.good()) {
+    std::cout << "Warning: Could not open input file: " << bg_file << std::endl;
     return 1;
   }
   std::streamsize size = file.tellg();
   if (size == std::streamsize(0)) {
-    return 1;
+    throw std::runtime_error("File is empty: " + bg_file);
   }
   file.seekg(0, std::ios::beg);
-  bg.reserve(size);
-  if (!file.read((char *)bg.data(), size)) {
+  bg.resize(size);
+  if (!file.read(reinterpret_cast<char *>(bg.data()), size)) {
+    std::cout << "Warning: couldn't read file: " << bg_file;
     return 1;
   }
   return 0;
 };
+
+void program::convertRGBtoAYUV(const std::vector<uint8_t> &input, std::vector<uint8_t> &output) {
+  size_t size = input.size();
+  output.resize(size);
+
+  for (size_t i = 0; i < size; i += 4) {
+    uint8_t r = static_cast<uint8_t>(input[i]);
+    uint8_t g = static_cast<uint8_t>(input[i + 1]);
+    uint8_t b = static_cast<uint8_t>(input[i + 2]);
+    uint8_t a = static_cast<uint8_t>(input[i + 3]);
+
+    uint8_t y = ((66 * r + 129 * g + 25 * b + 128) >> 8) + 16;
+    uint8_t u = ((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128;
+    uint8_t v = ((112 * r - 94 * g - 18 * b + 128) >> 8) + 128;
+    uint8_t a2 = a;
+
+    output[i] = a2;
+    output[i + 1] = y;
+    output[i + 2] = u;
+    output[i + 3] = v;
+  }
+}
+std::vector<uint8_t> program::processImage(const std::string &imagePath) {
+  av_register_all();
+
+  AVFormatContext *formatContext = nullptr;
+  if (avformat_open_input(&formatContext, imagePath.c_str(), nullptr, nullptr) != 0) {
+    throw std::runtime_error("Error opening file: " + imagePath);
+  }
+
+  AVCodec *codec = nullptr;
+  AVCodecParameters *codecParameters = nullptr;
+  int streamIndex = av_find_best_stream(formatContext, AVMEDIA_TYPE_VIDEO, -1, -1, &codec, 0);
+  if (streamIndex < 0 || !formatContext->streams[streamIndex]->codecpar) {
+    avformat_close_input(&formatContext);
+    throw std::runtime_error("No video stream found in file: " + imagePath);
+  }
+  codecParameters = formatContext->streams[streamIndex]->codecpar;
+
+  AVCodecContext *codecContext = avcodec_alloc_context3(codec);
+  if (avcodec_parameters_to_context(codecContext, codecParameters) < 0) {
+    avcodec_free_context(&codecContext);
+    avformat_close_input(&formatContext);
+    throw std::runtime_error("Failed to copy codec parameters");
+  }
+  if (avcodec_open2(codecContext, codec, nullptr) < 0) {
+    avcodec_free_context(&codecContext);
+    avformat_close_input(&formatContext);
+    throw std::runtime_error("Failed to open codec");
+  }
+
+  AVPacket packet;
+  av_init_packet(&packet);
+
+  if (av_read_frame(formatContext, &packet) < 0) {
+    av_packet_unref(&packet);
+    avcodec_free_context(&codecContext);
+    avformat_close_input(&formatContext);
+    throw std::runtime_error("Failed to read frame from file: " + imagePath);
+  }
+
+  AVFrame *frame = av_frame_alloc();
+  if (!frame) {
+    av_packet_unref(&packet);
+    avcodec_free_context(&codecContext);
+    avformat_close_input(&formatContext);
+    throw std::runtime_error("Failed to allocate frame");
+  }
+
+  int response = avcodec_send_packet(codecContext, &packet);
+  if (response < 0 && response != AVERROR(EAGAIN) && response != AVERROR_EOF) {
+    av_packet_unref(&packet);
+    av_frame_free(&frame);
+    avcodec_free_context(&codecContext);
+    avformat_close_input(&formatContext);
+    throw std::runtime_error("Error while sending a packet to the decoder");
+  }
+
+  response = avcodec_receive_frame(codecContext, frame);
+  if (response < 0 && response != AVERROR_EOF) {
+    av_packet_unref(&packet);
+    av_frame_free(&frame);
+    avcodec_free_context(&codecContext);
+    avformat_close_input(&formatContext);
+    throw std::runtime_error("Error while receiving a frame from the decoder");
+  }
+
+  AVFrame *rgbaFrame = av_frame_alloc();
+  if (!rgbaFrame) {
+    av_packet_unref(&packet);
+    av_frame_free(&frame);
+    avcodec_free_context(&codecContext);
+    avformat_close_input(&formatContext);
+    throw std::runtime_error("Failed to allocate frame for RGBA conversion");
+  }
+  int destWidth = 640;
+  int destHeight = 480;
+
+  // Create SwsContext for scaling and conversion
+  struct SwsContext *swsContext = sws_getContext(codecContext->width,
+                                                 codecContext->height,
+                                                 codecContext->pix_fmt,
+                                                 destWidth,
+                                                 destHeight,
+                                                 AV_PIX_FMT_RGBA,
+                                                 SWS_BILINEAR,
+                                                 nullptr,
+                                                 nullptr,
+                                                 nullptr);
+  if (!swsContext) {
+    av_packet_unref(&packet);
+    av_frame_free(&frame);
+    av_frame_free(&rgbaFrame);
+    avcodec_free_context(&codecContext);
+    avformat_close_input(&formatContext);
+    throw std::runtime_error("Failed to create SwsContext for RGBA conversion");
+  }
+  int bufferSize = destWidth * destHeight * 4;  // Assuming RGBA format (4 bytes per pixel)
+  std::vector<uint8_t> buffer(bufferSize);
+
+  // Initialize destination pointers for conversion
+  uint8_t *destData[4] = {buffer.data(), nullptr, nullptr, nullptr};
+  int destLinesize[4] = {destWidth * 4, 0, 0, 0};
+
+  sws_scale(swsContext, frame->data, frame->linesize, 0, codecContext->height, destData, destLinesize);
+
+  std::memcpy(buffer.data(), destData[0], bufferSize);
+
+  std::vector<uint8_t> imageData(destData[0], destData[0] + bufferSize);
+
+  sws_freeContext(swsContext);
+  av_packet_unref(&packet);
+  av_frame_free(&frame);
+  av_frame_free(&rgbaFrame);
+  avcodec_free_context(&codecContext);
+  avformat_close_input(&formatContext);
+
+  return imageData;
+}
 
 void program::load_spaceship_frames_into_memory(bool force) {
   if ((animate || force) && anim_bg.empty()) {
@@ -817,6 +1025,12 @@ art by: Marcin Glinski          _
       std::exit(0);
     }
   });
+
+  std::filesystem::path currentPath = std::filesystem::current_path();
+  if (currentPath.filename() == "src") {
+    std::filesystem::path parentPath = currentPath.parent_path();
+    std::filesystem::current_path(parentPath);
+  }
 
   prog.start_console();
 }
