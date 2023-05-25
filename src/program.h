@@ -3,6 +3,7 @@
 #include <chrono>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 #include "process.hpp"
 #include "tensorflow.hpp"
@@ -33,6 +34,7 @@ enum segmentation_mode {
   virtual_background_blurred,
   snowflakes,
   snowflakes_blur,
+  external_background
 };
 
 class program {
@@ -85,6 +87,8 @@ public:
 
   void start_console();
   int run();
+  std::vector<uint8_t> processImage(const std::string &imagePath);
+  void convertRGBtoAYUV(const std::vector<uint8_t> &input, std::vector<uint8_t> &output);
   unsigned list_cams(const std::vector<std::string> &input);
   unsigned set_cam(const std::vector<std::string> &input);
   unsigned set_mode(const std::vector<std::string> &input);
@@ -92,6 +96,7 @@ public:
   unsigned start(const std::vector<std::string> &input);
   unsigned stop(const std::vector<std::string> &input);
   unsigned preview(const std::vector<std::string> &input);
+  unsigned set_background(const std::vector<std::string> &input);
 
   int load(std::vector<uint8_t> &bg, const std::string &bg_file);
   void load_spaceship_frames_into_memory(bool force = false);
