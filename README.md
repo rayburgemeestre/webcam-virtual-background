@@ -144,7 +144,7 @@ particular animated background, the program might crash in that case). Next:
 The `Dockerfile` can be viewed to see the dependencies. The installed
 dependencies happen to be exactly the same on Ubuntu 22.04.
 
-### ChangeLog
+## ChangeLog
 
 Version 1.0: Initial version
 
