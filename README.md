@@ -148,7 +148,7 @@ dependencies happen to be exactly the same on Ubuntu 22.04.
 
 Version 1.0: Initial version
 
-Version 1.1: External images support (added by: Sebastian [https://github.com/ChillAndImprove][ChillAndImprove])
+Version 1.1: External images support (added by: Sebastian https://github.com/ChillAndImprove)
 
 ## The models
 
