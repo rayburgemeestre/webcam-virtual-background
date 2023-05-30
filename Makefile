@@ -111,7 +111,7 @@ export:  ## create files in the lib dir
 release:  ## create 'release' dir with all the binaries precompiled
 	make compile
 	rm -rf release
-	rm -rf virtual-bg-1.0
+	rm -rf virtual-bg-1.1
 	mkdir -p release
 	cp -prv lib release/
 	cp -prv main release/
@@ -122,15 +122,24 @@ release:  ## create 'release' dir with all the binaries precompiled
 	rm -vrf release/backgrounds/spaceship.tar.gz
 	ls -al release
 	cd release && ldd main
-	mv release virtual-bg-1.0
-	rm -rf virtual-bg-1.0.tar.gz
-	tar -czf virtual-bg-1.0.tar.gz virtual-bg-1.0
-	echo "upload virtual-bg-1.0.tar.gz to the correct tag on github.com"
+	mv release virtual-bg-1.1
+	rm -rf virtual-bg-1.1.tar.gz
+	tar -czf virtual-bg-1.1.tar.gz virtual-bg-1.1
+	echo "upload virtual-bg-1.1.tar.gz to the correct tag on github.com"
 	echo "then proceed with make docker && make push"
 
 docker:  ## build docker image
-	docker build -t rayburgemeestre/virtual-bg:1.0 .
-	docker tag rayburgemeestre/virtual-bg:1.0 docker.io/rayburgemeestre/virtual-bg:1.0
+	docker build --network=host -t rayburgemeestre/virtual-bg:1.1 .
+	docker tag rayburgemeestre/virtual-bg:1.1 docker.io/rayburgemeestre/virtual-bg:1.1
+
+devcontainer:  ## build dev container
+	docker build --network=host -t rayburgemeestre/virtual-bg-dev-container:latest .devcontainer
+
+devcontainer-push:  ## push dev container image to docker hub
+	docker push rayburgemeestre/virtual-bg-dev-container:latest
+
+build-shell:  ## start build shell
+	docker run -it -v $$PWD:$$PWD -w $$PWD rayburgemeestre/virtual-bg-dev-container:latest /bin/bash
 
 push:  ## push docker image to docker hub
-	docker push docker.io/rayburgemeestre/virtual-bg:1.0
+	docker push docker.io/rayburgemeestre/virtual-bg:1.1
