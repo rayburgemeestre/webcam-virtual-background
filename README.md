@@ -64,7 +64,7 @@ sudo modprobe v4l2loopback video_nr=8,9 exclusive_caps=0,1 card_label="Virtual T
 xhost +
 
 # the rest runs inside docker
-docker run --privileged -it -e DISPLAY=\$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix docker.io/rayburgemeestre/virtual-bg:1.1
+docker run --privileged -it -e DISPLAY=\$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix docker.io/rayburgemeestre/virtual-bg:1.1.1
 EOF
 chmod +x cam
 sudo cp -prv cam /usr/local/bin/  # optionally
@@ -73,7 +73,7 @@ sudo cp -prv cam /usr/local/bin/  # optionally
 If you want to use an external image as a background, you can mount the desired path into the Docker image. For example:
 
 ```bash
-docker run --privileged -it -e DISPLAY=\$DISPLAY -v /home/user/pictures:/release/pictures -v /tmp/.X11-unix:/tmp/.X11-unix docker.io/rayburgemeestre/virtual-bg:1.1
+docker run --privileged -it -e DISPLAY=\$DISPLAY -v /home/user/pictures:/release/pictures -v /tmp/.X11-unix:/tmp/.X11-unix docker.io/rayburgemeestre/virtual-bg:1.1.1
 ```
 
 Afterward, select the corresponding image by using the command: `set-mode external pictures/<your-image>.png`
@@ -105,9 +105,9 @@ This should work at least on Ubuntu 20.04 and 22.04:
     apt-get update
     apt-get install -y v4l2loopback-dkms make sudo libreadline8 libavfilter7 libxcb-shape0 ffmpeg
 
-    wget https://github.com/rayburgemeestre/webcam-virtual-background/releases/download/1.1/virtual-bg-1.1.tar.gz
-    tar -xvf virtual-bg-1.1.tar.gz
-    cd virtual-bg-1.1
+    wget https://github.com/rayburgemeestre/webcam-virtual-background/releases/download/1.1.1/virtual-bg-1.1.1.tar.gz
+    tar -xvf virtual-bg-1.1.1.tar.gz
+    cd virtual-bg-1.1.1
     ./cam
 
 ## Compiling from source
@@ -149,6 +149,8 @@ dependencies happen to be exactly the same on Ubuntu 22.04.
 Version 1.0: Initial version
 
 Version 1.1: External images support (added by: Sebastian https://github.com/ChillAndImprove)
+
+Version 1.1.1: Small "no buffer" fix (see: https://github.com/rayburgemeestre/webcam-virtual-background/issues/3)
 
 ## The models
 
