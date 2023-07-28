@@ -5,6 +5,9 @@ help:
 	@grep -E '^[0-9a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 configure:  ## configure ffmpeg, tensorflow, mediapipe and other dependencies
+	rm -rf ~/.cache/bazel
+	rm -rf build
+	mkdir -p build
 	make bazel
 	make ffmpeg
 	make tf
