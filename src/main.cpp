@@ -153,7 +153,7 @@ unsigned program::start(const std::vector<std::string> &input) {
     //  check: sudo v4l2-ctl -d /dev/video0 --all
     //  check: sudo v4l2-ctl -d /dev/video0 --list-formats-ex
     std::stringstream ss;
-    ss << "/usr/bin/ffmpeg -pix_fmt mjpeg -i " << camera_device
+    ss << "/usr/bin/ffmpeg -fflags nobuffer -pix_fmt mjpeg -i " << camera_device
        << " -f v4l2 -input_format mjpeg -framerate 10 -video_size 1024x680 -vf "
           "scale=640:480:force_original_aspect_ratio=increase,crop=640:480 -pix_fmt yuv420p -f v4l2 /dev/video8 2>&1";
 
@@ -300,6 +300,9 @@ int program::run() {
     fprintf(stderr, "Could not open input file '%s'", in_filename.c_str());
     goto end;
   }
+
+  // Hopefully this will help some users
+  ifmt_ctx->flags &= ~AVFMT_FLAG_NOBUFFER;
 
   if ((ret = avformat_find_stream_info(ifmt_ctx, 0)) < 0) {
     fprintf(stderr, "Failed to retrieve input stream information");

@@ -79,6 +79,30 @@ compile:  ## compile project
 	$$PWD/build/tiny-process-library/build/libtiny-process-library.a \
 	-o main
 
+compile2:  ## compile project (experimental for within build-shell)
+	LD_LIBRARY_PATH=$$LD_LIBRARY_PATH:/home/ffmpeg/lib:/home/tensorflow/bazel-bin/tensorflow/lite \
+	#PKG_CONFIG_PATH=$$PWD/ffmpeg/lib/pkgconfig c++ -O0 -g --std=c++17 -I$$PWD/ffmpeg/include -I$$PWD/build/tensorflow/ -I$$PWD/build/tensorflow/third_party/ \
+	PKG_CONFIG_PATH=$$PWD/ffmpeg/lib/pkgconfig c++ -O2 --std=c++17 \
+	-I/home/ffmpeg/include \
+	-I/home/tensorflow/ \
+	-I/home/tensorflow/third_party/ \
+	-I/home/ffmpeg-4.4 \
+	-I/home/mediapipe \
+	-I/home/tensorflow/tensorflow/lite/tools/make/downloads/flatbuffers/include \
+	-I/home/cpp-readline/src \
+	-I/home/tiny-process-library \
+	-L/home/ffmpeg/lib \
+	-L/home/tensorflow/bazel-bin/tensorflow/lite \
+	-Wl,-rpath=lib \
+	src/main.cpp \
+	src/transpose_conv_bias.cc \
+	src/blur_float.cpp \
+	/home/cpp-readline/src/Console.cpp \
+	src/snowflake.cpp \
+	-lavdevice -lavformat -lavcodec -lavutil -ltensorflowlite -lswscale -lreadline -lpthread \
+	/home/tiny-process-library/build/libtiny-process-library.a \
+	-o main
+
 device:  ## setup two devices /dev/video8 and /dev/video9
 	sudo modprobe -r v4l2loopback
 	# sudo modprobe v4l2loopback video_nr=8,9 exclusive_caps=1,1 card_label="Virtual YUV420P Camera","Virtual 640x480 420P TFlite Camera"
@@ -111,7 +135,7 @@ export:  ## create files in the lib dir
 release:  ## create 'release' dir with all the binaries precompiled
 	make compile
 	rm -rf release
-	rm -rf virtual-bg-1.1
+	rm -rf virtual-bg-1.1.1
 	mkdir -p release
 	cp -prv lib release/
 	cp -prv main release/
@@ -122,15 +146,15 @@ release:  ## create 'release' dir with all the binaries precompiled
 	rm -vrf release/backgrounds/spaceship.tar.gz
 	ls -al release
 	cd release && ldd main
-	mv release virtual-bg-1.1
-	rm -rf virtual-bg-1.1.tar.gz
-	tar -czf virtual-bg-1.1.tar.gz virtual-bg-1.1
-	echo "upload virtual-bg-1.1.tar.gz to the correct tag on github.com"
+	mv release virtual-bg-1.1.1
+	rm -rf virtual-bg-1.1.1.tar.gz
+	tar -czf virtual-bg-1.1.1.tar.gz virtual-bg-1.1.1
+	echo "upload virtual-bg-1.1.1.tar.gz to the correct tag on github.com"
 	echo "then proceed with make docker && make push"
 
 docker:  ## build docker image
-	docker build --network=host -t rayburgemeestre/virtual-bg:1.1 .
-	docker tag rayburgemeestre/virtual-bg:1.1 docker.io/rayburgemeestre/virtual-bg:1.1
+	docker build --network=host -t rayburgemeestre/virtual-bg:1.1.1 .
+	docker tag rayburgemeestre/virtual-bg:1.1.1 docker.io/rayburgemeestre/virtual-bg:1.1.1
 
 devcontainer:  ## build dev container
 	docker build --network=host -t rayburgemeestre/virtual-bg-dev-container:latest .devcontainer
@@ -142,4 +166,4 @@ build-shell:  ## start build shell
 	docker run -it -v $$PWD:$$PWD -w $$PWD rayburgemeestre/virtual-bg-dev-container:latest /bin/bash
 
 push:  ## push docker image to docker hub
-	docker push docker.io/rayburgemeestre/virtual-bg:1.1
+	docker push docker.io/rayburgemeestre/virtual-bg:1.1.1
